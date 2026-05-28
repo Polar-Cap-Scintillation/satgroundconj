@@ -35,13 +35,13 @@ class TLEHandler(object):
         #print(tle_file)
 
         # parse output into list of distinct TLEs
-        #try:
-        with open(tle_file, 'r') as f:
-            output = f.read()
-        #except FileNotFoundError:
-        #    self.download_tle(sid)
-        #    with open(tle_file, 'r') as f:
-        #        output = f.read()
+        try:
+            with open(tle_file, 'r') as f:
+                output = f.read()
+        except FileNotFoundError:
+            self.download_tle(sid)
+            with open(tle_file, 'r') as f:
+                output = f.read()
 
         split = output.splitlines()
         self.TLE_list = [[split[2*i],split[2*i+1]] for i in range(len(split)//2)]
@@ -50,40 +50,40 @@ class TLEHandler(object):
         # Do this as np.datetime64 instead of datetime?  May be faster?
         self.TLE_epoch = [dt.datetime.strptime(tle[0][18:23],'%y%j')+dt.timedelta(days=float(tle[0][23:32])) for tle in self.TLE_list]
 
-#    def download_tle(self, sid):
-#        # retrieve all TLEs for satellite from space-track.org
-#        # The space-track.org API limits the number of calls you can make, so it's better to retreive the
-#        #   entire library for one satellite and save it locally than try to collect individual
-#        #   TLEs as needed.
-#
-#        print(f'Downloading TLE for {sid} from spacetrack.org')
-#        st = SpaceTrackClient(identity=ST_USERNAME, password=ST_PASSWORD, base_url='https://for-testing-only.space-track.org')
-#        output = st.gp_history(norad_cat_id=sid, orderby='epoch asc', format='tle')
-#
-#        tle_file = Path(local_tle_library, f'{sid}.txt')
-#        with open(tle_file, 'w') as f:
-#            f.write(output)
-#        print('...Done')
-#        #print(output)
-#
-#
-#
-#    def create_tle_library(self, sid):
-#        # retrieve TLEs for entire period from space-track.org
-#        # The space-track.org API limits the number of calls you can make, so it's better to retreive the
-#        #   entire library for one satellite and save it as a class attribute than try to collect indivitual
-#        #   TLEs as needed.
-#        st = SpaceTrackClient(identity=ST_USERNAME, password=ST_PASSWORD, base_url='https://for-testing-only.space-track.org')
-#        output = st.gp_history(norad_cat_id=sid, orderby='epoch asc', format='tle')
-#
-#        print(output)
-#
-#        # parse output into list of distinct TLEs
-#        split = output.splitlines()
-#        self.TLE_list = [[split[2*i],split[2*i+1]] for i in range(len(split)//2)]
-#
-#        # extract epoch from each TLE
-#        self.TLE_epoch = [dt.datetime.strptime(tle[0][18:23],'%y%j')+dt.timedelta(days=float(tle[0][23:32])) for tle in self.TLE_list]
+    def download_tle(self, sid):
+        # retrieve all TLEs for satellite from space-track.org
+        # The space-track.org API limits the number of calls you can make, so it's better to retreive the
+        #   entire library for one satellite and save it locally than try to collect individual
+        #   TLEs as needed.
+
+        print(f'Downloading TLE for {sid} from spacetrack.org')
+        st = SpaceTrackClient(identity=ST_USERNAME, password=ST_PASSWORD, base_url='https://for-testing-only.space-track.org')
+        output = st.gp_history(norad_cat_id=sid, orderby='epoch asc', format='tle')
+
+        tle_file = Path(local_tle_library, f'{sid}.txt')
+        with open(tle_file, 'w') as f:
+            f.write(output)
+        print('...Done')
+        #print(output)
+
+
+
+    def create_tle_library(self, sid):
+        # retrieve TLEs for entire period from space-track.org
+        # The space-track.org API limits the number of calls you can make, so it's better to retreive the
+        #   entire library for one satellite and save it as a class attribute than try to collect indivitual
+        #   TLEs as needed.
+        st = SpaceTrackClient(identity=ST_USERNAME, password=ST_PASSWORD, base_url='https://for-testing-only.space-track.org')
+        output = st.gp_history(norad_cat_id=sid, orderby='epoch asc', format='tle')
+
+        print(output)
+
+        # parse output into list of distinct TLEs
+        split = output.splitlines()
+        self.TLE_list = [[split[2*i],split[2*i+1]] for i in range(len(split)//2)]
+
+        # extract epoch from each TLE
+        self.TLE_epoch = [dt.datetime.strptime(tle[0][18:23],'%y%j')+dt.timedelta(days=float(tle[0][23:32])) for tle in self.TLE_list]
 
     def sat_position(self, time_array):
 
