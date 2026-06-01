@@ -14,7 +14,7 @@ def projalt(site,az,el,proj_alt=300.):
     x, y, z = pm.geodetic2ecef(lat0, lon0, alt0)
     vx, vy, vz = pm.enu2uvw(np.cos(el)*np.sin(az), np.cos(el)*np.cos(az), np.sin(el), lat0, lon0)
 
-    earth = pm.Ellipsoid()
+    earth = pm.Ellipsoid.from_name('wgs84')
     a2 = (earth.semimajor_axis + proj_alt*1000.)**2
     b2 = (earth.semimajor_axis + proj_alt*1000.)**2
     c2 = (earth.semiminor_axis + proj_alt*1000.)**2
@@ -38,7 +38,7 @@ def calc_ipp(site, sat_ephem, height=300.):
     vy = sat_ephem[1] - y
     vz = sat_ephem[2] - z
 
-    earth = pm.Ellipsoid()
+    earth = pm.Ellipsoid.from_name('wgs84')
     a2 = (earth.semimajor_axis + height*1000.)**2
     b2 = (earth.semimajor_axis + height*1000.)**2
     c2 = (earth.semiminor_axis + height*1000.)**2

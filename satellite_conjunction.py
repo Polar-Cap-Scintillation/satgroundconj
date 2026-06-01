@@ -75,7 +75,7 @@ class SatConj(object):
             A = Apex(starttime)
             site_lat, site_lon = A.geo2apex(self.site_lat, self.site_lon, self.site_alt/1000.)
             _,_,_,_,_,_, d1, d2, d3, e1, e2, e3 = A.basevectors_apex(self.site_lat, self.site_lon, self.site_alt/1000.)
-            zen_vec = np.array(pm.enu2uvw(e3[0], e3[1], e3[2], self.site_lat, self.site_lon))
+            zen_vec = np.array(pm.enu2uvw(-e3[0], -e3[1], -e3[2], self.site_lat, self.site_lon))
             zen_vec = zen_vec/np.linalg.norm(zen_vec)
 
         if self.conjtype == 'zenith':

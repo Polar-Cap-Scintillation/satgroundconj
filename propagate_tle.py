@@ -9,6 +9,13 @@
 #   Zhu, J. (1994). Conversion of Earth-centered Earth-fixed coordinates to geodetic coordinates.
 #       IEEE Trans Aerosp Electron Syst, 30(3): 957-961. doi: 10.1109/7.303772
 
+# It violates space-track.org's usage policy to make too many API queries.  This
+#   code predownloads all TLEs for the satellite of interest and saves them in a
+#   local directory defined in space_track_credentials.  To force this code to 
+#   update all TLEs, just delete the contents fo this directory and let it
+#   request the latest TLE files.
+
+
 import numpy as np
 import datetime as dt
 import pymap3d as pm

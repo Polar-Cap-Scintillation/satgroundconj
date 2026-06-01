@@ -15,51 +15,6 @@ import io
 
 import requests
 
-def retrieve_prn_mapping_info():
-    # Retrieve PRN table from AGI FPI site and convert it to a dictionary
-    # ftp://ftp.agi.com/pub/Catalog/Almanacs/SEM/GPSData.txt
-
-    prn_table = []
-
-    # FTP seems no longer supported by most things and I think this website is defunct.  Migrate.
-    ftp = FTP('ftp.agi.com')
-    ftp.login()
-    ftp.retrlines('RETR pub/Catalog/Almanacs/SEM/GPSData.txt', callback=prn_table.append)
-    ftp.quit()
-
-    # parse lines of table
-    header_length = 22      # number of header lines
-    prn = np.empty((0,), dtype=int)
-    svn = np.empty((0,), dtype=int)
-    satnum = np.empty((0,), dtype=int)
-    starttime = np.empty((0,), dtype=dt.date)
-    endtime = np.empty((0,), dtype=dt.date)
-
-    for line in prn_table[header_length:]:
-        ls = line.split()
-        # skip empty lines
-        try:
-            prn = np.append(prn, int(ls[0]))
-        except IndexError:
-            continue
-        svn = np.append(svn, int(ls[1]))
-        satnum = np.append(satnum, int(ls[2]))
-        starttime = np.append(starttime, dt.date.fromisoformat(ls[7]))
-        # handle current satelite (no endtime given)
-        # this treatment assumes input will always be a time in the past
-        try:
-            endtime = np.append(endtime, dt.date.fromisoformat(ls[11]))
-        except IndexError:
-            endtime = np.append(endtime, dt.date.today())
-
-    # organize into dictionary based on PRN
-    prn_mapping_dict = {}
-    for i in range(1,32):
-        idx = np.argwhere(prn==i).flatten()
-        prn_mapping_dict[i] = {'SVN':svn[idx], 'NORADID':np.array(satnum[idx]), 'STARTTIME':np.array(starttime[idx]), 'ENDTIME':np.array(endtime[idx])}
-
-    return prn_mapping_dict
-
 
 def time_convert(time_string):
     # Convert YYYY:DDD:SSSSS to datetime format
@@ -77,7 +32,7 @@ def time_convert(time_string):
 
     return date
 
-def retrieve_prn_mapping_info2():
+def retrieve_prn_mapping_info():
 
     r = requests.get('https://files.igs.org/pub/station/general/igs_satellite_metadata.snx')
     r.encoding = 'utf-8'
@@ -125,7 +80,7 @@ def prn2norad(prn, date):
     print(prn, date)
     date = date.replace(tzinfo=dt.timezone.utc)
     
-    identifier_table, prn_table = retrieve_prn_mapping_info2()
+    identifier_table, prn_table = retrieve_prn_mapping_info()
 
 
     subtable = prn_table.loc[prn_table['PRN']==prn]
