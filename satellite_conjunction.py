@@ -17,7 +17,8 @@ try:
     from apexpy import Apex
 except:
     print('Could not import apexpy - cannot calculate magnetic conjuntions.')
-from propagate_tle import TLEHandler
+#from propagate_tle import TLEHandler
+from tle import TLEHandler
 
 
 class SatConj(object):
@@ -41,7 +42,8 @@ class SatConj(object):
         self.tolerance = tolerance
         self.conjcoords = coords
         self.site_coordinates(site_lat, site_lon, site_alt)
-        self.tle = TLEHandler(sat_id)
+        self.sat_id = sat_id
+        self.tle = TLEHandler()
 
 
     def site_coordinates(self, site_lat, site_lon, site_alt):
@@ -63,7 +65,7 @@ class SatConj(object):
         unix_time_array = np.arange(ustarttime, uendtime, self.deltime)
         time_array = np.array([dt.datetime.utcfromtimestamp(ut) for ut in unix_time_array])
 
-        sat_position = self.tle.sat_position(time_array).T
+        sat_position = self.tle.sat_position(self.sat_id, time_array).T
 
 
         # define site
