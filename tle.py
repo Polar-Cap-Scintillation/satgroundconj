@@ -100,19 +100,29 @@ class TLEHandler(object):
         sat_cat = int(sat_cat)
         utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
 
-        # Find experiment by start/end times and radar id
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat)
-                                     #TLE.epoch>=utime_array[0],
-                                     #TLE.epoch<=utime_array[-1])
+        # Extract relevant TLEs from database
+        # There might be a more elegant way to do this if you're better at SQL, but this works
 
-        tle_list = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
-        # If list is empty, need to do something else?  Change time range??
-        print(len(tle_list))
+        # All TLEs between first and last time
+        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+                                     TLE.epoch>=utime_array[0],
+                                     TLE.epoch<=utime_array[-1])
+        tle_between = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
 
-        #tle_list = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
-        #tle_list = self.session.query(TLE).filter(conditions).order_by(abs(TLE.epoch-utime)).all()
-        #.order_by(TLE.epoch).order_by(TLE.setnum).all()
+        # Last epoch before first time
+        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+                                      TLE.epoch<utime_array[0])
+        tle_first = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
 
+        # First epoch after last time
+        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+                                      TLE.epoch>utime_array[-1])
+        tle_last = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).first()
+
+        # Create full list
+        tle_list = [tle_first] + tle_between + [tle_last]
+
+        # Extract array of epoch times
         epoch_list = [t.epoch for t in tle_list]
 
         # Find index of epoch closest to each time in the time array
@@ -121,9 +131,11 @@ class TLEHandler(object):
         ## Somewhere in here check that epoch is within 10 days and if not, update TLE library from spacetrack.org?
         ## Raise warning instead?
 
+        # Cycle through epochs and calculate position for satellite for each one when that epoch is the closest time
         sat_position = np.empty((3,0))
 
         for i in np.unique(closest_epoch_idx):
+            # Select subset of times closest to a particular epoch
             subset_times = np.array(time_array)[closest_epoch_idx==i]
 
             # calcualte satellite position using functions from TLE propgation script
@@ -215,7 +227,7 @@ import cartopy.crs as ccrs
 def sql_test():
 
     sat_id = 39452   # Swarm A
-    time_list = [dt.datetime(2020,2,10)+dt.timedelta(minutes=i) for i in range(60*24)]
+    time_list = [dt.datetime(2020,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
 
     tlelib = TLEHandler()
     pos = tlelib.sat_position(sat_id, time_list)
