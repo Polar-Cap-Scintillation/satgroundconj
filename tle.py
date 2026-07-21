@@ -83,7 +83,7 @@ def create_tle_sql():
 
 class TLEHandler(object):
     def __init__(self, dbfile='tle.db'):
-        dbfile = '/Users/e30737/Desktop/Research/PolarCapScintillation/conjunctions/tle.db'
+        dbfile = '/Users/e30737/Desktop/Software/satgroundconj/tle.db'
 
         self.load_db(dbfile)
 
