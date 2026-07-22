@@ -18,12 +18,12 @@ try:
 except:
     print('Could not import apexpy - cannot calculate magnetic conjuntions.')
 #from propagate_tle import TLEHandler
-from tle import TLEHandler
+from .tle import TLEHandler
 
 
 class SatConj(object):
 
-    def __init__(self, site_lat, site_lon, site_alt, sat_id, deltime=60., conjtype='zenith', tolerance=25., coords='geo'):
+    def __init__(self, site, sat_id, deltime=60., conjtype='zenith', tolerance=25., coords='geo', tledb=None):
     # deltime = time step between calculations of the satellite position
     # conjtype = method to use for identifying conjunctions, either 'zenith' to find conjunctions within a certain angle of
     #   zenith or 'latlon' to find conjunctions within a certain lat/lon box of the site
@@ -41,9 +41,12 @@ class SatConj(object):
         self.conjtype = conjtype
         self.tolerance = tolerance
         self.conjcoords = coords
-        self.site_coordinates(site_lat, site_lon, site_alt)
+        self.site_coordinates(*site)
         self.sat_id = sat_id
-        self.tle = TLEHandler()
+        if tledb:
+            self.tle = TLEHandler(dbfile=tledb)
+        else:
+            self.tle = TLEHandler()
 
 
     def site_coordinates(self, site_lat, site_lon, site_alt):

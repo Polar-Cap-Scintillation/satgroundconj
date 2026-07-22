@@ -15,10 +15,11 @@
 #   update all TLEs, just delete the contents fo this directory and let it
 #   request the latest TLE files.
 
-
+import os
 import numpy as np
 import datetime as dt
 import pymap3d as pm
+from tqdm import tqdm
 
 from sgp4.earth_gravity import wgs72
 from sgp4.io import twoline2rv
@@ -44,46 +45,56 @@ class TLE(Base):
     setnum = Column(Integer, nullable=True)
 
 
-def create_tle_sql():
+def create_tle_sql(source_files, dbfile='tle.db'):
+
+    if os.path.exists(dbfile):
+        raise FileExistsError(f'File {dbfile} already exists!')
+
+    numfiles = len(source_files)
 
     # Source files need to be refrenced more dynamically
-    filename = '/Users/e30737/Desktop/Data/TLE/tle2020.txt'
-    engine = create_engine("sqlite:///tle.db", echo=False)
+    engine = create_engine(f"sqlite:///{dbfile}", echo=False)
 
     Base.metadata.create_all(engine)
     
     with Session(engine) as session:
 
-        with open(filename, 'r') as f:
-            i = 0
-            for l1 in f:
-                l2 = f.readline()
-       
-                try:
-                    elm = twoline2rv(l1, l2, wgs72)
-                except ValueError as e:
-                    # Put this in an error log
-                    #print(e)
-                    #print(len(l1), len(l2))
-                    #print('LINE 1:', l1)
-                    #print('LINE 2:', l2)
-                    continue
+        i = 0       # unique id counter
+        for fi, srcfile in enumerate(source_files):
+            print(f'[{fi+1}/{numfiles}] {srcfile}')
 
-                ut_epoch = (elm.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
-                
-                element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
+            with open(srcfile, 'r') as f:
+                num_lines = sum(1 for line in f)
+
+            with open(srcfile, 'r') as f:
+                for l1 in tqdm(f, total=num_lines/2):
+                    l2 = f.readline()
+           
+                    try:
+                        elm = twoline2rv(l1, l2, wgs72)
+                    except ValueError as e:
+                        # Put this in an error log
+                        #print(e)
+                        #print(len(l1), len(l2))
+                        #print('LINE 1:', l1)
+                        #print('LINE 2:', l2)
+                        continue
     
-                session.add(element)
-                i += 1
-                
-        session.commit()
+                    ut_epoch = (elm.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
+                    
+                    element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
+        
+                    session.add(element)
+                    i += 1
+
+            print('Committing to SQL database ...')
+            session.commit()
 
 
 
 
 class TLEHandler(object):
     def __init__(self, dbfile='tle.db'):
-        dbfile = '/Users/e30737/Desktop/Software/satgroundconj/tle.db'
 
         self.load_db(dbfile)
 
@@ -100,6 +111,7 @@ class TLEHandler(object):
         sat_cat = int(sat_cat)
         utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
 
+        # Make this its own function??
         # Extract relevant TLEs from database
         # There might be a more elegant way to do this if you're better at SQL, but this works
 
