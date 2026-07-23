@@ -1,4 +1,4 @@
-# satellite_conjunctions.py
+# conjunction.py
 # Determine satellite conjunctions with an site within a given tolerance.
 # You must have an account at space-track.org (free and easy to set up)
 # Requires the following non-standard packages:
