@@ -39,10 +39,25 @@ def generate_database():
     Generate TLE SQL database from source files
     """
     
-    tle_dir = '/Users/e30737/Desktop/Data/TLE/srctxt'
-    tle_files = [os.path.join(tle_dir, f) for f in os.listdir(tle_dir)]
+    #tle_dir = '/Users/e30737/Desktop/Data/TLE/srctxt'
+    #tle_files = [os.path.join(tle_dir, f) for f in os.listdir(tle_dir)]
+    tle_dir = '/Volumes/Janeway/TLE/srctxt'
+    tle_files = [os.path.join(tle_dir, 'tle2006.txt')]
     tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/tle.db')
 
+
+def database_tle1():
+
+    #sat_id = 39452   # Swarm A
+    sat_id = 25544   # ISS
+    starttime = dt.datetime(2006,2,1)
+    endtime = dt.datetime(2006,8,1)
+
+    dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
+
+    tlelib = tle.TLEHandler(dbfile=dbfile)
+    epochs = tlelib.select_tles(sat_id, starttime, endtime)
+    print(epochs)
 
 
 def database_tle():
@@ -143,8 +158,8 @@ def gnss_conjunction():
 
 if __name__=='__main__':
     #generate_database()
-    known_tle()
-    database_tle()
-    conjunction()
-    gnss_conjunction()
+    #known_tle()
+    database_tle1()
+    #conjunction()
+    #gnss_conjunction()
 
