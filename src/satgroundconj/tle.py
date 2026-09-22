@@ -15,6 +15,11 @@
 #   update all TLEs, just delete the contents fo this directory and let it
 #   request the latest TLE files.
 
+# NEW
+# BULK DOWNLOAD OF ALL TLE
+# https://ln5.sync.com/dl/afd354190/c5cd2q72-a5qjzp4q-nbjdiqkr-cenajuqu
+#
+
 import os
 import numpy as np
 import datetime as dt
@@ -30,6 +35,8 @@ from sqlalchemy import Column, Integer, String
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
+from zipfile import ZipFile
+
 
 
 Base = declarative_base()
@@ -38,7 +45,7 @@ class TLE(Base):
     __tablename__ = 'tle'
 
     id = Column(Integer, primary_key = True)
-    norad = Column(Integer, nullable = False)
+    norad = Column(Integer, nullable = False, index=True)
     epoch = Column(Integer, nullable=False)
     line1 = Column(String(70), nullable=False)
     line2 = Column(String(70), nullable=False)
@@ -63,9 +70,14 @@ def create_tle_sql(source_files, dbfile='tle.db'):
         for fi, srcfile in enumerate(source_files):
             print(f'[{fi+1}/{numfiles}] {srcfile}')
 
+#            with ZipFile(srcfile) as zf:
+#
+#                for filename in zf.namelist():
+#                    print(f'{filename} in {srcfile}')
+#
             with open(srcfile, 'r') as f:
                 num_lines = sum(1 for line in f)
-
+ 
             with open(srcfile, 'r') as f:
                 for l1 in tqdm(f, total=num_lines/2):
                     l2 = f.readline()
@@ -103,6 +115,41 @@ class TLEHandler(object):
 
         engine = create_engine(f"sqlite:///{dbfile}", echo=False)
         self.session = Session(engine)
+
+    def select_tles(self, sat_cat, time0, time1):
+
+        sat_cat = int(sat_cat)
+        utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
+        utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
+        #utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
+
+        # Make this its own function??
+        # Extract relevant TLEs from database
+        # There might be a more elegant way to do this if you're better at SQL, but this works
+
+        # All TLEs between first and last time
+        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+                                     TLE.epoch>=utime0,
+                                     TLE.epoch<=utime1)
+        tle_between = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
+
+        # Last epoch before first time
+        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+                                      TLE.epoch<utime0)
+        tle_first = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
+
+        # First epoch after last time
+        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+                                      TLE.epoch>utime1)
+        tle_last = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).first()
+
+        # Create full list
+        tle_list = [tle_first] + tle_between + [tle_last]
+
+        # Extract array of epoch times
+        epoch_list = [t.epoch for t in tle_list]
+
+        return epoch_list
 
 
     def sat_position(self, sat_cat, time_array):
