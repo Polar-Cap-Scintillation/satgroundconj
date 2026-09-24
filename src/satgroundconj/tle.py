@@ -20,6 +20,21 @@
 # https://ln5.sync.com/dl/afd354190/c5cd2q72-a5qjzp4q-nbjdiqkr-cenajuqu
 #
 
+
+###############################################################
+# TODO
+# - create sgp4 to database object function
+# - create database object to sgp4 function
+# - regularize units used for epochs
+# - look at using skyfield for TEME -> ECEF/geodetic conversion
+# - look at using array-based sgp4 to avoid time loop
+# - clean up everything??
+################################################################
+
+
+
+
+
 import os
 import numpy as np
 import datetime as dt
@@ -28,28 +43,92 @@ from tqdm import tqdm
 
 from sgp4.earth_gravity import wgs72
 from sgp4.io import twoline2rv
+from sgp4.api import Satrec
 from sgp4.ext import jday
+from sgp4 import exporter
 
 import sqlalchemy
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, Float, String
 from sqlalchemy import create_engine, desc
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-from zipfile import ZipFile
+#from zipfile import ZipFile
+import polars as pl
+import pickle
 
 
 
 Base = declarative_base()
 
+#class TLE(Base):
+#    __tablename__ = 'tle'
+#
+#    id = Column(Integer, primary_key = True)
+#    norad = Column(Integer, nullable = False, index=True)
+#    epoch = Column(Integer, nullable=False)
+#    line1 = Column(String(70), nullable=False)
+#    line2 = Column(String(70), nullable=False)
+#    setnum = Column(Integer, nullable=True)
+
+
 class TLE(Base):
     __tablename__ = 'tle'
-
     id = Column(Integer, primary_key = True)
-    norad = Column(Integer, nullable = False, index=True)
+    satnum = Column(Integer, nullable=False, index=True)
     epoch = Column(Integer, nullable=False)
-    line1 = Column(String(70), nullable=False)
-    line2 = Column(String(70), nullable=False)
-    setnum = Column(Integer, nullable=True)
+    #epochyr = Column(Integer, nullable=False)
+    #epochdays = Column(Float, nullable=False)
+    bstar = Column(Float, nullable=False)
+    ndot = Column(Float, nullable=False)
+    nddot = Column(Float, nullable=False)
+    ecco = Column(Float, nullable=False)
+    argpo = Column(Float, nullable=False)
+    inclo = Column(Float, nullable=False)
+    mo = Column(Float, nullable=False)
+    no_kozai = Column(Float, nullable=False)
+    nodeo = Column(Float, nullable=False)
+
+#>>> satellite2.sgp4init(
+#...     WGS72,                # gravity model
+#...     'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
+#...     25544,                # satnum: Satellite number
+#...     25545.69339541,       # epoch: days since 1949 December 31 00:00 UT
+#...     3.8792e-05,           # bstar: drag coefficient (1/earth radii)
+#...     0.0,                  # ndot: ballistic coefficient (radians/minute^2)
+#...     0.0,                  # nddot: mean motion 2nd derivative (radians/minute^3)
+#...     0.0007417,            # ecco: eccentricity
+#...     0.3083420829620822,   # argpo: argument of perigee (radians 0..2pi)
+#...     0.9013560935706996,   # inclo: inclination (radians 0..pi)
+#...     1.4946964807494398,   # mo: mean anomaly (radians 0..2pi)
+#...     0.06763602333248933,  # no_kozai: mean motion (radians/minute)
+#...     3.686137125541276,    # nodeo: R.A. of ascending node (radians 0..2pi)
+#... )
+#
+#
+#
+#satnum_str — Satellite number, as a 5-character string.
+#satnum — Satellite number, converted to an integer.
+#classification — 'U', 'C', or 'S' indicating the element set is Unclassified, Classified, or Secret.
+#ephtype — Integer “ephemeris type”, used internally by space agencies to mark element sets that are not ready for publication; this field should always be 0 in published TLEs.
+#elnum — Element set number.
+#revnum — Satellite’s revolution number at the moment of the epoch, presumably counting from 1 following launch.
+#epochyr — Epoch date: the last two digits of the year.
+#epochdays — Epoch date: the number of days into the year, including a decimal fraction for the UTC time of day.
+#ndot — First time derivative of the mean motion (loaded from the TLE, but otherwise ignored).
+#nddot — Second time derivative of the mean motion (loaded from the TLE, but otherwise ignored).
+#bstar — Ballistic drag coefficient B* (1/earth radii).
+#inclo — Inclination (radians 0 ≤ i < pi).
+#nodeo — Right ascension of ascending node (radians 0 ≤ Ω < 2pi).
+#ecco — Eccentricity.
+#argpo — Argument of perigee (radians 0 ≤ ω < 2pi).
+#mo — Mean anomaly (radians 0 ≤ M < 2pi).
+#no_kozai — Mean motion (radians/minute).
+#no — Alias for no_kozai, for compatibility with old code.
+#
+#You can also access the epoch as a Julian date:
+#jdsatepoch — Whole part of the epoch’s Julian date.
+#jdsatepochF — Fractional part of the epoch’s Julian date.
+
 
 
 def create_tle_sql(source_files, dbfile='tle.db'):
@@ -66,15 +145,12 @@ def create_tle_sql(source_files, dbfile='tle.db'):
     
     with Session(engine) as session:
 
+    #rows = list()
+
         i = 0       # unique id counter
         for fi, srcfile in enumerate(source_files):
             print(f'[{fi+1}/{numfiles}] {srcfile}')
 
-#            with ZipFile(srcfile) as zf:
-#
-#                for filename in zf.namelist():
-#                    print(f'{filename} in {srcfile}')
-#
             with open(srcfile, 'r') as f:
                 num_lines = sum(1 for line in f)
  
@@ -91,17 +167,73 @@ def create_tle_sql(source_files, dbfile='tle.db'):
                         #print('LINE 1:', l1)
                         #print('LINE 2:', l2)
                         continue
-    
+        
                     ut_epoch = (elm.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
                     
-                    element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
+                    #element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
+                    element = TLE(id=i,
+                                  satnum = elm.satnum,
+                                  epoch = ut_epoch,
+                                  bstar = elm.bstar,
+                                  ndot = elm.ndot,
+                                  nddot = elm.nddot,
+                                  ecco = elm.ecco,
+                                  argpo = elm.argpo,
+                                  inclo = elm.inclo,
+                                  mo = elm.mo,
+                                  no_kozai = elm.no_kozai,
+                                  nodeo = elm.nodeo)
         
                     session.add(element)
+
+                    #row = dict(
+                    #           satnum_str     = elm.satnum_str, # Satellite number, as a 5-character string.
+                    #           satnum         = elm.satnum, # Satellite number, converted to an integer.
+                    #           classification = elm.classification, # 'U', 'C', or 'S' indicating the element set is Unclassified, Classified, or Secret.
+                    #           ephtype        = elm.ephtype, # Integer “ephemeris type”, used internally by space agencies to mark element sets that are not ready for publication; this field should always be 0 in published TLEs.
+                    #           elnum          = elm.elnum, # Element set number.
+                    #           revnum         = elm.revnum, # Satellite’s revolution number at the moment of the epoch, presumably counting from 1 following launch.
+                    #           epochyr        = elm.epochyr, # Epoch date: the last two digits of the year.
+                    #           epochdays      = elm.epochdays, # Epoch date: the number of days into the year, including a decimal fraction for the UTC time of day.
+                    #           ndot           = elm.ndot, # First time derivative of the mean motion (loaded from the TLE, but otherwise ignored).
+                    #           nddot          = elm.nddot, # Second time derivative of the mean motion (loaded from the TLE, but otherwise ignored).
+                    #           bstar          = elm.bstar, # Ballistic drag coefficient B* (1/earth radii).
+                    #           inclo          = elm.inclo, # Inclination (radians 0 ≤ i < pi).
+                    #           nodeo          = elm.nodeo, # Right ascension of ascending node (radians 0 ≤ Ω < 2pi).
+                    #           ecco           = elm.ecco, # Eccentricity.
+                    #           argpo          = elm.argpo, # Argument of perigee (radians 0 ≤ ω < 2pi).
+                    #           mo             = elm.mo, # Mean anomaly (radians 0 ≤ M < 2pi).
+                    #           no_kozai       = elm.no_kozai, # Mean motion (radians/minute).
+                    #           no             = elm.no # Alias for no_kozai, for compatibility with old code.
+                    #           )
+                    
+                    #You can also access the epoch as a Julian date:
+                    #jdsatepoch — Whole part of the epoch’s Julian date.
+                    #jdsatepochF — Fractional part of the epoch’s Julian date.
+
+
+                    #print(elm.satnum, elm.epochyr, elm.epochdays)
+
+                    #rows.append(row)
+
                     i += 1
 
             print('Committing to SQL database ...')
             session.commit()
 
+    #database = pl.DataFrame(rows)
+
+    ##with open('tle.pk', 'wb') as f:
+    ##    pickle.dump(database, f)
+
+    ##pyodbc_uri = (
+    ##    "mssql+pyodbc://user:pass@server:1433/test?"
+    ##    "driver=ODBC+Driver+18+for+SQL+Server"
+    ##)
+    ##engine = create_engine(pyodbc_uri, fast_executemany=True)  
+    #engine = create_engine(f"sqlite:///{dbfile}", echo=False)
+    #database.write_database(table_name='tle', connection=engine)
+  
 
 
 
@@ -116,9 +248,24 @@ class TLEHandler(object):
         engine = create_engine(f"sqlite:///{dbfile}", echo=False)
         self.session = Session(engine)
 
+        #with open(dbfile, 'rb') as f:
+        #    self.db = pickle.load(f)
+
+        ##uri = "postgresql://username:password@server:port/database"
+        #uri = f"sqlite:///{dbfile}"
+        #query = "SELECT * FROM tle"
+        ##self.db = pl.read_database_uri(query=query, uri=uri)
+        #self.db = pl.read_database(query=query, connection=engine.connect())
+
     def select_tles(self, sat_cat, time0, time1):
 
         sat_cat = int(sat_cat)
+        #doy0 = (time0-time0.replace(month=1, day=1, hour=0, minute=0, second=0)).days + 1
+        #doy1 = (time1-time1.replace(month=1, day=1, hour=0, minute=0, second=0)).days + 1
+        #print(doy0, doy1)
+
+        print(time0, time1)
+
         utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
         utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
         #utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
@@ -127,19 +274,25 @@ class TLEHandler(object):
         # Extract relevant TLEs from database
         # There might be a more elegant way to do this if you're better at SQL, but this works
 
+        #tle_list = self.db.filter(
+        #    pl.col('epoch').is_between(utime0, utime1),
+        #    pl.col('satnum') == sat_cat,
+        #)
+        
+
         # All TLEs between first and last time
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+        conditions = sqlalchemy.and_(TLE.satnum==sat_cat,
                                      TLE.epoch>=utime0,
                                      TLE.epoch<=utime1)
         tle_between = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
 
         # Last epoch before first time
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+        conditions = sqlalchemy.and_(TLE.satnum==sat_cat,
                                       TLE.epoch<utime0)
         tle_first = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
 
         # First epoch after last time
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+        conditions = sqlalchemy.and_(TLE.satnum==sat_cat,
                                       TLE.epoch>utime1)
         tle_last = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).first()
 
@@ -148,8 +301,9 @@ class TLEHandler(object):
 
         # Extract array of epoch times
         epoch_list = [t.epoch for t in tle_list]
+        #epoch_list = tle_list['epoch']
 
-        return epoch_list
+        return epoch_list, tle_list
 
 
     def sat_position(self, sat_cat, time_array):
@@ -161,28 +315,29 @@ class TLEHandler(object):
         # Make this its own function??
         # Extract relevant TLEs from database
         # There might be a more elegant way to do this if you're better at SQL, but this works
+        epoch_list, tle_list = self.select_tles(sat_cat, time_array[0], time_array[-1])
 
-        # All TLEs between first and last time
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
-                                     TLE.epoch>=utime_array[0],
-                                     TLE.epoch<=utime_array[-1])
-        tle_between = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
-
-        # Last epoch before first time
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
-                                      TLE.epoch<utime_array[0])
-        tle_first = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
-
-        # First epoch after last time
-        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
-                                      TLE.epoch>utime_array[-1])
-        tle_last = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).first()
-
-        # Create full list
-        tle_list = [tle_first] + tle_between + [tle_last]
-
-        # Extract array of epoch times
-        epoch_list = [t.epoch for t in tle_list]
+#        # All TLEs between first and last time
+#        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+#                                     TLE.epoch>=utime_array[0],
+#                                     TLE.epoch<=utime_array[-1])
+#        tle_between = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
+#
+#        # Last epoch before first time
+#        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+#                                      TLE.epoch<utime_array[0])
+#        tle_first = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
+#
+#        # First epoch after last time
+#        conditions = sqlalchemy.and_(TLE.norad==sat_cat,
+#                                      TLE.epoch>utime_array[-1])
+#        tle_last = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).first()
+#
+#        # Create full list
+#        tle_list = [tle_first] + tle_between + [tle_last]
+#
+#        # Extract array of epoch times
+#        epoch_list = [t.epoch for t in tle_list]
 
         # Find index of epoch closest to each time in the time array
         closest_epoch_idx = np.array([np.argmin(np.abs(ut-epoch_list)) for ut in utime_array])
@@ -198,13 +353,15 @@ class TLEHandler(object):
             subset_times = np.array(time_array)[closest_epoch_idx==i]
 
             # calcualte satellite position using functions from TLE propgation script
-            X, Y, Z = propagate_tle(subset_times, [tle_list[i].line1, tle_list[i].line2])
+            #line1, line2 = exporter.export_tle(tle_list[i])
+            #X, Y, Z = propagate_tle(subset_times, [tle_list[i].line1, tle_list[i].line2])
+            X, Y, Z = propagate_tle(subset_times, tle_list[i])
             sat_position = np.append(sat_position, np.array([X, Y, Z]), axis=1)
 
         return sat_position
 
 
-def propagate_tle(time0, TLE):
+def propagate_tle(time0, tleinfo):
     # time0 is an array of datetime objects that the satellite position is to be calculated at
     # TLE is a list consisting of the first and second lines of the TLE as strings ([TLE line 1, TLE line 2])
 
@@ -218,8 +375,32 @@ def propagate_tle(time0, TLE):
     Y = []
     Z = []
 
+
+
     # initialize tle object
-    tle = twoline2rv(TLE[0],TLE[1],wgs72)
+    #tle = twoline2rv(TLE[0],TLE[1],wgs72)
+
+
+    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
+    epoch1949  = (tleinfo.epoch-epoch1949s)/(24.*60.*60.)
+
+    tle = Satrec()
+    tle.sgp4init(
+        wgs72,                # gravity model
+        'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
+        tleinfo.satnum,                # satnum: Satellite number
+        epoch1949,       # epoch: days since 1949 December 31 00:00 UT
+        tleinfo.bstar,           # bstar: drag coefficient (1/earth radii)
+        tleinfo.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
+        tleinfo.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
+        np.deg2rad(tleinfo.ecco),            # ecco: eccentricity
+        np.deg2rad(tleinfo.argpo),   # argpo: argument of perigee (radians 0..2pi)
+        np.deg2rad(tleinfo.inclo),   # inclo: inclination (radians 0..pi)
+        np.deg2rad(tleinfo.mo),   # mo: mean anomaly (radians 0..2pi)
+        np.deg2rad(tleinfo.no_kozai),  # no_kozai: mean motion (radians/minute)
+        np.deg2rad(tleinfo.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
+    )
+
 
     for t in time0:
 

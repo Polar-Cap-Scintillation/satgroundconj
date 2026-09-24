@@ -2,6 +2,7 @@
 # Several examples of different ways to use this code
 
 import os
+import glob
 import datetime as dt
 import numpy as np
 import pymap3d as pm
@@ -40,10 +41,12 @@ def generate_database():
     """
     
     #tle_dir = '/Users/e30737/Desktop/Data/TLE/srctxt'
-    #tle_files = [os.path.join(tle_dir, f) for f in os.listdir(tle_dir)]
     tle_dir = '/Volumes/Janeway/TLE/srctxt'
-    tle_files = [os.path.join(tle_dir, 'tle2006.txt')]
-    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/tle.db')
+    #tle_files = [os.path.join(tle_dir, f) for f in os.listdir(tle_dir)]
+    tle_files = [os.path.join(tle_dir, f) for f in sorted(glob.glob('tle2004_*.txt', root_dir=tle_dir))]
+    #print(tle_files)
+    #tle_files = [os.path.join(tle_dir, 'tle2006.txt')]
+    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test1.db')
 
 
 def database_tle1():
@@ -53,7 +56,7 @@ def database_tle1():
     starttime = dt.datetime(2006,2,1)
     endtime = dt.datetime(2006,8,1)
 
-    dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
+    dbfile = '/Users/e30737/Desktop/Data/TLE/tle2.db'
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
     epochs = tlelib.select_tles(sat_id, starttime, endtime)
@@ -66,10 +69,15 @@ def database_tle():
     """
     print('database_tle')
 
-    sat_id = 39452   # Swarm A
-    time_list = [dt.datetime(2020,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
+    #sat_id = 39452   # Swarm A
+    #time_list = [dt.datetime(2020,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
 
-    dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
+    #dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
+
+    sat_id = 25544   # ISS
+    time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
+
+    dbfile = '/Users/e30737/Desktop/Data/TLE/test1.db'
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
     X, Y, Z = tlelib.sat_position(sat_id, time_list)
@@ -159,7 +167,7 @@ def gnss_conjunction():
 if __name__=='__main__':
     #generate_database()
     #known_tle()
-    database_tle1()
+    database_tle()
     #conjunction()
     #gnss_conjunction()
 
