@@ -75,22 +75,22 @@ def database_tle():
     #dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
 
     sat_id = 25544   # ISS
-    time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(60)]
+    time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(6000)]
 
     dbfile = '/Users/e30737/Desktop/Data/TLE/test1.db'
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
     X, Y, Z = tlelib.sat_position(sat_id, time_list)
-    glat, glon, galt = pm.ecef2geodetic(X, Y, Z)
+    #glat, glon, galt = pm.ecef2geodetic(X, Y, Z)
 
-    proj = ccrs.Mercator()
-    fig, ax = plt.subplots(subplot_kw=dict(projection=proj))
-    ax.coastlines()
-    ax.gridlines()
+    #proj = ccrs.Mercator()
+    #fig, ax = plt.subplots(subplot_kw=dict(projection=proj))
+    #ax.coastlines()
+    #ax.gridlines()
 
-    ax.plot(glon, glat, transform=ccrs.PlateCarree())
+    #ax.plot(glon, glat, transform=ccrs.PlateCarree())
 
-    plt.show()
+    #plt.show()
 
 
 

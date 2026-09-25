@@ -452,35 +452,45 @@ def propagate_tle(time0, tleline1, tleline2):
 #    )
 
 
-    for t in time0:
+    #out = jday(t)
+    out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
+    jd, fr = np.array(out).T
+    jd = np.ascontiguousarray(jd)
+    fr = np.ascontiguousarray(fr)
+    e, r, v = tle.sgp4_array(jd, fr)
+    print(r.shape, v.shape)
 
-        # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
-        #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
-        jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
-        e, position, velocity = tle.sgp4(jd, fr)
-        position_TEME = np.array(position)
 
-
-        # convert to Pseudo Earth Fixed [PEF]
-
-        # compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
-        JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
-        T_UT1 = (JD - 2451545.0)/36525.
-
-        # compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
-        GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
-        # convert GMST to angle (units of rad)
-        GMST = GMST*2*np.pi/86400. % (2*np.pi)
-        # form rotational matrix
-        Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
-        # apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
-        position_PEF = np.dot(Rot,position_TEME)
-
-        # add position to coordinate arrays
-        X.append(position_PEF[0])
-        Y.append(position_PEF[1])
-        Z.append(position_PEF[2])
-
+#    for t in time0:
+#
+#        # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
+#        #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
+#        jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
+#        e, position, velocity = tle.sgp4(jd, fr)
+#        #position_TEME = np.array(position)
+#        position_PEF = np.array(position)
+#
+#
+#        ## convert to Pseudo Earth Fixed [PEF]
+#
+#        ## compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
+#        #JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
+#        #T_UT1 = (JD - 2451545.0)/36525.
+#
+#        ## compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
+#        #GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
+#        ## convert GMST to angle (units of rad)
+#        #GMST = GMST*2*np.pi/86400. % (2*np.pi)
+#        ## form rotational matrix
+#        #Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
+#        ## apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
+#        #position_PEF = np.dot(Rot,position_TEME)
+#
+#        # add position to coordinate arrays
+#        X.append(position_PEF[0])
+#        Y.append(position_PEF[1])
+#        Z.append(position_PEF[2])
+#
     return np.array(X)*1000., np.array(Y)*1000., np.array(Z)*1000.
 
 
