@@ -75,7 +75,7 @@ def database_tle():
     #dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
 
     sat_id = 25544   # ISS
-    time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
+    time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(60)]
 
     dbfile = '/Users/e30737/Desktop/Data/TLE/test1.db'
 

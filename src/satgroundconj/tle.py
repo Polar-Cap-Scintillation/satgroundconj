@@ -41,10 +41,10 @@ import datetime as dt
 import pymap3d as pm
 from tqdm import tqdm
 
-from sgp4.earth_gravity import wgs72
-from sgp4.io import twoline2rv
-from sgp4.api import Satrec
-from sgp4.ext import jday
+#from sgp4.earth_gravity import wgs72
+#from sgp4.io import twoline2rv
+from sgp4.api import Satrec, WGS72, jday
+from sgp4.ext import jday as jday2
 from sgp4 import exporter
 
 import sqlalchemy
@@ -167,22 +167,24 @@ def create_tle_sql(source_files, dbfile='tle.db'):
                         #print('LINE 1:', l1)
                         #print('LINE 2:', l2)
                         continue
-        
-                    ut_epoch = (elm.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
-                    
-                    #element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
-                    element = TLE(id=i,
-                                  satnum = elm.satnum,
-                                  epoch = ut_epoch,
-                                  bstar = elm.bstar,
-                                  ndot = elm.ndot,
-                                  nddot = elm.nddot,
-                                  ecco = elm.ecco,
-                                  argpo = elm.argpo,
-                                  inclo = elm.inclo,
-                                  mo = elm.mo,
-                                  no_kozai = elm.no_kozai,
-                                  nodeo = elm.nodeo)
+       
+
+                    element = sgp2tle(elm, i)
+#                    ut_epoch = (elm.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
+#                    
+#                    #element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
+#                    element = TLE(id=i,
+#                                  satnum = elm.satnum,
+#                                  epoch = ut_epoch,
+#                                  bstar = elm.bstar,
+#                                  ndot = elm.ndot,
+#                                  nddot = elm.nddot,
+#                                  ecco = elm.ecco,
+#                                  argpo = elm.argpo,
+#                                  inclo = elm.inclo,
+#                                  mo = elm.mo,
+#                                  no_kozai = elm.no_kozai,
+#                                  nodeo = elm.nodeo)
         
                     session.add(element)
 
@@ -235,6 +237,49 @@ def create_tle_sql(source_files, dbfile='tle.db'):
     #database.write_database(table_name='tle', connection=engine)
   
 
+def sgp2tle(sgp4obj, i):
+
+    ut_epoch = (sgp4obj.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
+
+    tleobj = TLE(id=i,
+                 satnum   = sgp4obj.satnum,
+                 epoch    = ut_epoch,
+                 bstar    = sgp4obj.bstar,
+                 ndot     = sgp4obj.ndot,
+                 nddot    = sgp4obj.nddot,
+                 ecco     = sgp4obj.ecco,
+                 argpo    = sgp4obj.argpo,
+                 inclo    = sgp4obj.inclo,
+                 mo       = sgp4obj.mo,
+                 no_kozai = sgp4obj.no_kozai,
+                 nodeo    = sgp4obj.nodeo)
+
+    return tleobj
+        
+
+def tle2sgp(tleobj):
+
+    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
+    epoch1949  = (tleobj.epoch-epoch1949s)/(24.*60.*60.)
+
+    sgp4obj = Satrec()
+    sgp4obj.sgp4init(
+                     WGS72,                # gravity model
+                     'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
+                     tleobj.satnum,                # satnum: Satellite number
+                     epoch1949,       # epoch: days since 1949 December 31 00:00 UT
+                     tleobj.bstar,           # bstar: drag coefficient (1/earth radii)
+                     tleobj.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
+                     tleobj.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
+                     np.deg2rad(tleobj.ecco),            # ecco: eccentricity
+                     np.deg2rad(tleobj.argpo),   # argpo: argument of perigee (radians 0..2pi)
+                     np.deg2rad(tleobj.inclo),   # inclo: inclination (radians 0..pi)
+                     np.deg2rad(tleobj.mo),   # mo: mean anomaly (radians 0..2pi)
+                     np.deg2rad(tleobj.no_kozai),  # no_kozai: mean motion (radians/minute)
+                     np.deg2rad(tleobj.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
+                    )
+
+    return sgp4obj
 
 
 class TLEHandler(object):
@@ -352,16 +397,21 @@ class TLEHandler(object):
             # Select subset of times closest to a particular epoch
             subset_times = np.array(time_array)[closest_epoch_idx==i]
 
+
+            sgp4obj = tle2sgp(tle_list[i])
+
+            line1, line2 = exporter.export_tle(sgp4obj)
+
             # calcualte satellite position using functions from TLE propgation script
             #line1, line2 = exporter.export_tle(tle_list[i])
-            #X, Y, Z = propagate_tle(subset_times, [tle_list[i].line1, tle_list[i].line2])
-            X, Y, Z = propagate_tle(subset_times, tle_list[i])
+            X, Y, Z = propagate_tle(subset_times, line1, line2)
+            #X, Y, Z = propagate_tle(subset_times, tle_list[i])
             sat_position = np.append(sat_position, np.array([X, Y, Z]), axis=1)
 
         return sat_position
 
 
-def propagate_tle(time0, tleinfo):
+def propagate_tle(time0, tleline1, tleline2):
     # time0 is an array of datetime objects that the satellite position is to be calculated at
     # TLE is a list consisting of the first and second lines of the TLE as strings ([TLE line 1, TLE line 2])
 
@@ -378,41 +428,43 @@ def propagate_tle(time0, tleinfo):
 
 
     # initialize tle object
-    #tle = twoline2rv(TLE[0],TLE[1],wgs72)
+    tle = Satrec.twoline2rv(tleline1, tleline2)
 
 
-    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
-    epoch1949  = (tleinfo.epoch-epoch1949s)/(24.*60.*60.)
-
-    tle = Satrec()
-    tle.sgp4init(
-        wgs72,                # gravity model
-        'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
-        tleinfo.satnum,                # satnum: Satellite number
-        epoch1949,       # epoch: days since 1949 December 31 00:00 UT
-        tleinfo.bstar,           # bstar: drag coefficient (1/earth radii)
-        tleinfo.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
-        tleinfo.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
-        np.deg2rad(tleinfo.ecco),            # ecco: eccentricity
-        np.deg2rad(tleinfo.argpo),   # argpo: argument of perigee (radians 0..2pi)
-        np.deg2rad(tleinfo.inclo),   # inclo: inclination (radians 0..pi)
-        np.deg2rad(tleinfo.mo),   # mo: mean anomaly (radians 0..2pi)
-        np.deg2rad(tleinfo.no_kozai),  # no_kozai: mean motion (radians/minute)
-        np.deg2rad(tleinfo.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
-    )
+#    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
+#    epoch1949  = (tleinfo.epoch-epoch1949s)/(24.*60.*60.)
+#
+#    tle = Satrec()
+#    tle.sgp4init(
+#        wgs72,                # gravity model
+#        'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
+#        tleinfo.satnum,                # satnum: Satellite number
+#        epoch1949,       # epoch: days since 1949 December 31 00:00 UT
+#        tleinfo.bstar,           # bstar: drag coefficient (1/earth radii)
+#        tleinfo.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
+#        tleinfo.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
+#        np.deg2rad(tleinfo.ecco),            # ecco: eccentricity
+#        np.deg2rad(tleinfo.argpo),   # argpo: argument of perigee (radians 0..2pi)
+#        np.deg2rad(tleinfo.inclo),   # inclo: inclination (radians 0..pi)
+#        np.deg2rad(tleinfo.mo),   # mo: mean anomaly (radians 0..2pi)
+#        np.deg2rad(tleinfo.no_kozai),  # no_kozai: mean motion (radians/minute)
+#        np.deg2rad(tleinfo.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
+#    )
 
 
     for t in time0:
 
         # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
-        position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
+        #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
+        jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
+        e, position, velocity = tle.sgp4(jd, fr)
         position_TEME = np.array(position)
 
 
         # convert to Pseudo Earth Fixed [PEF]
 
         # compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
-        JD = jday(t.year,t.month,t.day,t.hour,t.minute,t.second)
+        JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
         T_UT1 = (JD - 2451545.0)/36525.
 
         # compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
