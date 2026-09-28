@@ -421,9 +421,9 @@ def propagate_tle(time0, tleline1, tleline2):
     #   please refer to Vallado et al., 2006 Appendix C or Panigrahi and Gaurav, 2015
     #   (https://mycoordinates.org/tracking-satellite-footprints-on-earth%E2%80%99s-surface/)
 
-    X = []
-    Y = []
-    Z = []
+    #X = []
+    #Y = []
+    #Z = []
 
 
 
@@ -454,43 +454,57 @@ def propagate_tle(time0, tleline1, tleline2):
 
     #out = jday(t)
     out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
-    jd, fr = np.array(out).T
-    jd = np.ascontiguousarray(jd)
-    fr = np.ascontiguousarray(fr)
-    e, r, v = tle.sgp4_array(jd, fr)
-    print(r.shape, v.shape)
+    jd, fr = np.array(out, order='F').T     # order='F' needed for some kind of error not contiguous in C error when passed into sgp4_array() ???
+    print(jd.flags)
+    print(fr.flags)
+    #jd = np.ascontiguousarray(jd)
+    #fr = np.ascontiguousarray(fr)
+    e, position, velocity = tle.sgp4_array(jd, fr)
+    #print(r.shape, v.shape)
 
 
 #    for t in time0:
-#
-#        # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
-#        #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
-#        jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
-#        e, position, velocity = tle.sgp4(jd, fr)
-#        #position_TEME = np.array(position)
-#        position_PEF = np.array(position)
-#
-#
-#        ## convert to Pseudo Earth Fixed [PEF]
-#
-#        ## compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
-#        #JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
-#        #T_UT1 = (JD - 2451545.0)/36525.
-#
-#        ## compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
-#        #GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
-#        ## convert GMST to angle (units of rad)
-#        #GMST = GMST*2*np.pi/86400. % (2*np.pi)
-#        ## form rotational matrix
-#        #Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
-#        ## apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
-#        #position_PEF = np.dot(Rot,position_TEME)
-#
-#        # add position to coordinate arrays
-#        X.append(position_PEF[0])
-#        Y.append(position_PEF[1])
-#        Z.append(position_PEF[2])
-#
+
+    # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
+    #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
+    #jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
+    #e, position, velocity = tle.sgp4(jd, fr)
+    position_TEME = np.array(position)
+    #position_PEF = np.array(position)
+
+
+    ## convert to Pseudo Earth Fixed [PEF]
+
+    # compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
+    #JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
+    JD = np.array([jday2(t.year,t.month,t.day,t.hour,t.minute,t.second) for t in time0])
+
+    T_UT1 = (JD - 2451545.0)/36525.
+
+    # compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
+    GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
+    # convert GMST to angle (units of rad)
+    GMST = GMST*2*np.pi/86400. % (2*np.pi)
+    # form rotational matrix
+    #Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
+    Rot = np.array([[np.cos(GMST), np.sin(GMST), np.zeros(GMST.shape)],
+                    [-np.sin(GMST), np.cos(GMST), np.zeros(GMST.shape)],
+                    [np.zeros(GMST.shape), np.zeros(GMST.shape), np.ones(GMST.shape)]])
+    # apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
+    print(Rot.shape, position_TEME.shape)
+    #position_PEF = np.dot(Rot,position_TEME)
+    position_PEF = np.einsum('ijk,kj->ki', Rot, position_TEME)
+
+    print(position_TEME.shape, position_PEF.shape)
+
+    # add position to coordinate arrays
+    #X.append(position_PEF[0])
+    #Y.append(position_PEF[1])
+    #Z.append(position_PEF[2])
+    X = position_PEF[0]
+    Y = position_PEF[1]
+    Z = position_PEF[2]
+
     return np.array(X)*1000., np.array(Y)*1000., np.array(Z)*1000.
 
 

@@ -81,16 +81,16 @@ def database_tle():
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
     X, Y, Z = tlelib.sat_position(sat_id, time_list)
-    #glat, glon, galt = pm.ecef2geodetic(X, Y, Z)
+    glat, glon, galt = pm.ecef2geodetic(X, Y, Z)
 
-    #proj = ccrs.Mercator()
-    #fig, ax = plt.subplots(subplot_kw=dict(projection=proj))
-    #ax.coastlines()
-    #ax.gridlines()
+    proj = ccrs.Mercator()
+    fig, ax = plt.subplots(subplot_kw=dict(projection=proj))
+    ax.coastlines()
+    ax.gridlines()
 
-    #ax.plot(glon, glat, transform=ccrs.PlateCarree())
+    ax.plot(glon, glat, transform=ccrs.PlateCarree())
 
-    #plt.show()
+    plt.show()
 
 
 
