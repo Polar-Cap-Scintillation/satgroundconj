@@ -404,11 +404,30 @@ class TLEHandler(object):
 
             # calcualte satellite position using functions from TLE propgation script
             #line1, line2 = exporter.export_tle(tle_list[i])
-            X, Y, Z = propagate_tle(subset_times, line1, line2)
+            X, Y, Z = propagate_tle2(subset_times, line1, line2)
             #X, Y, Z = propagate_tle(subset_times, tle_list[i])
             sat_position = np.append(sat_position, np.array([X, Y, Z]), axis=1)
 
         return sat_position
+
+
+from skyfield.api import EarthSatellite, load, wgs84
+
+def propagate_tle2(time0, tleline1, tleline2):
+
+    ts = load.timescale()
+    satellite = EarthSatellite(tleline1, tleline2, '', ts)
+    print(satellite)
+   
+    
+    tmp = np.array([[t.year, t.month, t.day, t.hour, t.minute, t.second] for t in time0])
+    tstmp = ts.utc(tmp[:,0], tmp[:,1], tmp[:,2], tmp[:,3], tmp[:,4], tmp[:,5])
+    #t = ts.utc(2014, 1, 23, 11, 18, 7)
+
+    geocentric = satellite.at(tstmp)
+    posobj = wgs84.geographic_position_of(geocentric)
+    
+    return posobj.itrs_xyz.m
 
 
 def propagate_tle(time0, tleline1, tleline2):
