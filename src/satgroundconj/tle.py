@@ -46,6 +46,7 @@ from tqdm import tqdm
 from sgp4.api import Satrec, WGS72, jday
 from sgp4.ext import jday as jday2
 from sgp4 import exporter
+from sgp4.conveniences import sat_epoch_datetime
 
 import sqlalchemy
 from sqlalchemy import Column, Integer, Float, String
@@ -159,7 +160,8 @@ def create_tle_sql(source_files, dbfile='tle.db'):
                     l2 = f.readline()
            
                     try:
-                        elm = twoline2rv(l1, l2, wgs72)
+                        #elm = twoline2rv(l1, l2, wgs72)
+                        elm = Satrec.twoline2rv(l1, l2)
                     except ValueError as e:
                         # Put this in an error log
                         #print(e)
@@ -237,13 +239,23 @@ def create_tle_sql(source_files, dbfile='tle.db'):
     #database.write_database(table_name='tle', connection=engine)
   
 
+### SGP4 library seems to like to use julian date as an epoch, so we will too.
+
 def sgp2tle(sgp4obj, i):
 
-    ut_epoch = (sgp4obj.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
+#    ut_epoch = (sgp4obj.epoch-dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)).total_seconds()
+#
+#>>> sat_epoch_datetime(satellite)
+#datetime.datetime(2019, 12, 9, 16, 38, 29, 363423, tzinfo=UTC)
+#
+
+    jd_epoch = sgp4obj.jdsatepoch + sgp4obj.jdsatepochF
+
+    #ut_epoch = (sat_epoch_datetime(sgp4obj) - dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)).total_seconds()
 
     tleobj = TLE(id=i,
                  satnum   = sgp4obj.satnum,
-                 epoch    = ut_epoch,
+                 epoch    = jd_epoch,
                  bstar    = sgp4obj.bstar,
                  ndot     = sgp4obj.ndot,
                  nddot    = sgp4obj.nddot,
@@ -259,24 +271,27 @@ def sgp2tle(sgp4obj, i):
 
 def tle2sgp(tleobj):
 
-    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
-    epoch1949  = (tleobj.epoch-epoch1949s)/(24.*60.*60.)
+    #epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
+    #epoch1949  = (tleobj.epoch-epoch1949s)/(24.*60.*60.)
+
+    #To compute the “epoch” argument, take the epoch’s Julian date and subtract 2433281.5 days.
+    epoch = tleobj.epoch - 2433281.5
 
     sgp4obj = Satrec()
     sgp4obj.sgp4init(
-                     WGS72,                # gravity model
-                     'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
-                     tleobj.satnum,                # satnum: Satellite number
-                     epoch1949,       # epoch: days since 1949 December 31 00:00 UT
-                     tleobj.bstar,           # bstar: drag coefficient (1/earth radii)
-                     tleobj.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
-                     tleobj.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
-                     np.deg2rad(tleobj.ecco),            # ecco: eccentricity
-                     np.deg2rad(tleobj.argpo),   # argpo: argument of perigee (radians 0..2pi)
-                     np.deg2rad(tleobj.inclo),   # inclo: inclination (radians 0..pi)
-                     np.deg2rad(tleobj.mo),   # mo: mean anomaly (radians 0..2pi)
-                     np.deg2rad(tleobj.no_kozai),  # no_kozai: mean motion (radians/minute)
-                     np.deg2rad(tleobj.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
+                     WGS72,                 # gravity model
+                     'i',                   # 'a' = old AFSPC mode, 'i' = improved mode
+                     tleobj.satnum,         # satnum: Satellite number
+                     epoch,                 # epoch: days since 1949 December 31 00:00 UT
+                     tleobj.bstar,          # bstar: drag coefficient (1/earth radii)
+                     tleobj.ndot,           # ndot: ballistic coefficient (radians/minute^2)
+                     tleobj.nddot,          # nddot: mean motion 2nd derivative (radians/minute^3)
+                     tleobj.ecco,           # ecco: eccentricity
+                     tleobj.argpo,          # argpo: argument of perigee (radians 0..2pi)
+                     tleobj.inclo,          # inclo: inclination (radians 0..pi)
+                     tleobj.mo,             # mo: mean anomaly (radians 0..2pi)
+                     tleobj.no_kozai,       # no_kozai: mean motion (radians/minute)
+                     tleobj.nodeo,          # nodeo: R.A. of ascending node (radians 0..2pi)
                     )
 
     return sgp4obj
@@ -311,6 +326,8 @@ class TLEHandler(object):
 
         print(time0, time1)
 
+        #utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
+        #utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
         utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
         utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
         #utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
@@ -355,6 +372,7 @@ class TLEHandler(object):
         # Note: This function only works for sequential times
 
         sat_cat = int(sat_cat)
+        #utime_array = np.array([(t-dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)).total_seconds() for t in time_array])
         utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
 
         # Make this its own function??
@@ -412,22 +430,62 @@ class TLEHandler(object):
 
 
 from skyfield.api import EarthSatellite, load, wgs84
+from skyfield.sgp4lib import TEME
 
 def propagate_tle2(time0, tleline1, tleline2):
 
+    print(tleline1)
+    print(tleline2)
+
+
     ts = load.timescale()
-    satellite = EarthSatellite(tleline1, tleline2, '', ts)
+    satellite = EarthSatellite(tleline1, tleline2)
     print(satellite)
    
     
     tmp = np.array([[t.year, t.month, t.day, t.hour, t.minute, t.second] for t in time0])
     tstmp = ts.utc(tmp[:,0], tmp[:,1], tmp[:,2], tmp[:,3], tmp[:,4], tmp[:,5])
     #t = ts.utc(2014, 1, 23, 11, 18, 7)
+    print(tstmp.utc_iso())
 
     geocentric = satellite.at(tstmp)
+
     posobj = wgs84.geographic_position_of(geocentric)
+
+    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
+    ax.plot(posobj.itrs_xyz.km[0], posobj.itrs_xyz.km[1], posobj.itrs_xyz.km[2])
+    plt.show()
+
+
+    print('PROPAGATE_TLE2')
+    print(posobj.latitude, posobj.longitude)
     
     return posobj.itrs_xyz.m
+
+from skyfield import sgp4lib
+
+def propagate_tle3(time0, tleline1, tleline2):
+
+    # initialize tle object
+    tle = Satrec.twoline2rv(tleline1, tleline2)
+
+    out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
+    jd, fr = np.array(out, order='F').T     # order='F' needed for some kind of error not contiguous in C error when passed into sgp4_array() ???
+    e, r, v = tle.sgp4_array(jd, fr)
+    #print(r.shape, v.shape)
+
+
+    #posobj = TEME(r)
+
+    r,v = sgp4lib.TEME_to_ITRF(jd+fr, r, v)
+    print(r.shape)
+
+    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
+    #ax.plot(position[0], position[1], position[2])
+    ax.plot(posobj.itrs_xyz.km[0], posobj.itrs_xyz.km[1], posobj.itrs_xyz.km[2])
+    plt.show()
+
+
 
 
 def propagate_tle(time0, tleline1, tleline2):
@@ -480,6 +538,12 @@ def propagate_tle(time0, tleline1, tleline2):
     #fr = np.ascontiguousarray(fr)
     e, position, velocity = tle.sgp4_array(jd, fr)
     #print(r.shape, v.shape)
+
+
+
+    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
+    ax.plot(position[0], position[1], position[2])
+    plt.show()
 
 
 #    for t in time0:

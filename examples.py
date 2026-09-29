@@ -43,10 +43,10 @@ def generate_database():
     #tle_dir = '/Users/e30737/Desktop/Data/TLE/srctxt'
     tle_dir = '/Volumes/Janeway/TLE/srctxt'
     #tle_files = [os.path.join(tle_dir, f) for f in os.listdir(tle_dir)]
-    tle_files = [os.path.join(tle_dir, f) for f in sorted(glob.glob('tle2004_*.txt', root_dir=tle_dir))]
+    #tle_files = [os.path.join(tle_dir, f) for f in sorted(glob.glob('tle2004_*.txt', root_dir=tle_dir))]
     #print(tle_files)
-    #tle_files = [os.path.join(tle_dir, 'tle2006.txt')]
-    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test1.db')
+    tle_files = [os.path.join(tle_dir, 'tle2015.txt')]
+    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test2.db')
 
 
 def database_tle1():
@@ -69,15 +69,17 @@ def database_tle():
     """
     print('database_tle')
 
-    #sat_id = 39452   # Swarm A
-    #time_list = [dt.datetime(2020,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
+    sat_id = 39452   # Swarm A
+    #time_list = [dt.datetime(2015,2,18,5,50,0)+dt.timedelta(minutes=i) for i in range(300)]
+    #time_list = [dt.datetime(2015,9,5,11,30,0, tzinfo=dt.timezone.utc)+dt.timedelta(minutes=i) for i in range(300)]
+    time_list = [dt.datetime(2015,9,5,11,37,0)+dt.timedelta(minutes=i) for i in range(10)]
 
     #dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
 
-    sat_id = 25544   # ISS
-    time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(6000)]
+    #sat_id = 25544   # ISS
+    #time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(6000)]
 
-    dbfile = '/Users/e30737/Desktop/Data/TLE/test1.db'
+    dbfile = '/Users/e30737/Desktop/Data/TLE/test2.db'
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
     X, Y, Z = tlelib.sat_position(sat_id, time_list)
