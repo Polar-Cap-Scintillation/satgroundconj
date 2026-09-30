@@ -25,7 +25,6 @@
 ###############################################################
 # TODO
 # - add command line script for generating TLE database
-# - in select_tles(), default return epochs as datetime objects
 ################################################################
 
 
@@ -37,6 +36,7 @@ import numpy as np
 import datetime as dt
 import pymap3d as pm
 from tqdm import tqdm
+import argparse
 
 from sgp4.api import Satrec, WGS72, jday
 from sgp4 import exporter
@@ -70,7 +70,7 @@ class TLE(Base):
 
 
 
-def create_tle_sql(source_files, dbfile='tle.db'):
+def create_sql_database(source_files, dbfile='tle.db'):
     """
     Generate TLE SQL database from source text files.
     Text files can be downloaded in bulk from:
@@ -119,6 +119,20 @@ def create_tle_sql(source_files, dbfile='tle.db'):
 
             print('Committing to SQL database ...')
             session.commit()
+
+
+def cli_create_database():
+    """
+    CLI fuction to generate TLE SQL database from source files
+    """
+    parser = argparse.ArgumentParser(prog='create-tle-db',
+                                     description='Generate TLE database from source files.')
+    parser.add_argument('input', nargs='+', help='input source txt files')
+    parser.add_argument('-o', '--output', help='output db file')
+    args = parser.parse_args()
+
+    create_sql_database(args.input, dbfile=args.output)
+
 
 
 def sgp2sql(sgp4obj, i):

@@ -27,3 +27,6 @@ classifiers = [
 [project.urls]
 "Homepage" = "https://github.com/PolarCapScintillation/satgroundconj"
 "Bug Tracker" = "https://github.com/PolarCapScintillation/satgroundconj"
+
+[project.scripts]
+create-tle-db = "satgroundconj.tle:cli_create_database"
