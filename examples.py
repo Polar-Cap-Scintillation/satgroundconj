@@ -46,20 +46,20 @@ def generate_database():
     #tle_files = [os.path.join(tle_dir, f) for f in sorted(glob.glob('tle2004_*.txt', root_dir=tle_dir))]
     #print(tle_files)
     tle_files = [os.path.join(tle_dir, 'tle2015.txt')]
-    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test4.db')
+    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test5.db')
 
 
 def database_tle1():
 
     #sat_id = 39452   # Swarm A
     sat_id = 25544   # ISS
-    starttime = dt.datetime(2006,2,1)
-    endtime = dt.datetime(2006,8,1)
+    starttime = dt.datetime(2015,2,1)
+    endtime = dt.datetime(2015,2,10)
 
-    dbfile = '/Users/e30737/Desktop/Data/TLE/tle2.db'
+    dbfile = '/Users/e30737/Desktop/Data/TLE/test4.db'
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
-    epochs = tlelib.select_tles(sat_id, starttime, endtime)
+    epochs, tles = tlelib.select_tles(sat_id, starttime, endtime)
     print(epochs)
 
 
