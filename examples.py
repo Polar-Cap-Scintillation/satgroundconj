@@ -46,7 +46,7 @@ def generate_database():
     #tle_files = [os.path.join(tle_dir, f) for f in sorted(glob.glob('tle2004_*.txt', root_dir=tle_dir))]
     #print(tle_files)
     tle_files = [os.path.join(tle_dir, 'tle2015.txt')]
-    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test2.db')
+    tle.create_tle_sql(tle_files, dbfile='/Users/e30737/Desktop/Data/TLE/test4.db')
 
 
 def database_tle1():
@@ -72,25 +72,26 @@ def database_tle():
     sat_id = 39452   # Swarm A
     #time_list = [dt.datetime(2015,2,18,5,50,0)+dt.timedelta(minutes=i) for i in range(300)]
     #time_list = [dt.datetime(2015,9,5,11,30,0, tzinfo=dt.timezone.utc)+dt.timedelta(minutes=i) for i in range(300)]
-    time_list = [dt.datetime(2015,9,5,11,37,0)+dt.timedelta(minutes=i) for i in range(10)]
+    time_list = [dt.datetime(2015,9,5,11,37,0)+dt.timedelta(minutes=i) for i in range(15)]
 
     #dbfile = '/Users/e30737/Desktop/Data/TLE/tle.db'
 
     #sat_id = 25544   # ISS
     #time_list = [dt.datetime(2000,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(6000)]
 
-    dbfile = '/Users/e30737/Desktop/Data/TLE/test2.db'
+    dbfile = '/Users/e30737/Desktop/Data/TLE/test4.db'
 
     tlelib = tle.TLEHandler(dbfile=dbfile)
     X, Y, Z = tlelib.sat_position(sat_id, time_list)
     glat, glon, galt = pm.ecef2geodetic(X, Y, Z)
 
-    proj = ccrs.Mercator()
+    proj = ccrs.AzimuthalEquidistant(central_longitude=-115, central_latitude=60)
     fig, ax = plt.subplots(subplot_kw=dict(projection=proj))
     ax.coastlines()
     ax.gridlines()
+    ax.set_extent([-130, -100, 30, 80])
 
-    ax.plot(glon, glat, transform=ccrs.PlateCarree())
+    ax.scatter(glon, glat, transform=ccrs.PlateCarree())
 
     plt.show()
 

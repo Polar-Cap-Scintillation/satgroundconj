@@ -29,6 +29,7 @@
 # - look at using skyfield for TEME -> ECEF/geodetic conversion
 # - look at using array-based sgp4 to avoid time loop
 # - clean up everything??
+# - add command line script for generating TLE database
 ################################################################
 
 
@@ -44,18 +45,21 @@ from tqdm import tqdm
 #from sgp4.earth_gravity import wgs72
 #from sgp4.io import twoline2rv
 from sgp4.api import Satrec, WGS72, jday
-from sgp4.ext import jday as jday2
+#from sgp4.ext import jday as jday2
 from sgp4 import exporter
-from sgp4.conveniences import sat_epoch_datetime
+#from sgp4.conveniences import sat_epoch_datetime
+from skyfield.api import EarthSatellite, load, wgs84
+#from skyfield.sgp4lib import TEME
 
 import sqlalchemy
-from sqlalchemy import Column, Integer, Float, String
+from sqlalchemy import Column, Integer, Float
 from sqlalchemy import create_engine, desc
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+#from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, Session
 
 #from zipfile import ZipFile
-import polars as pl
-import pickle
+#import polars as pl
+#import pickle
 
 
 
@@ -76,7 +80,7 @@ class TLE(Base):
     __tablename__ = 'tle'
     id = Column(Integer, primary_key = True)
     satnum = Column(Integer, nullable=False, index=True)
-    epoch = Column(Integer, nullable=False)
+    epoch = Column(Float, nullable=False)
     #epochyr = Column(Integer, nullable=False)
     #epochdays = Column(Float, nullable=False)
     bstar = Column(Float, nullable=False)
@@ -171,7 +175,7 @@ def create_tle_sql(source_files, dbfile='tle.db'):
                         continue
        
 
-                    element = sgp2tle(elm, i)
+                    element = sgp2sql(elm, i)
 #                    ut_epoch = (elm.epoch-dt.datetime.fromtimestamp(0)).total_seconds()
 #                    
 #                    #element = TLE(id=i, norad=elm.satnum, epoch=ut_epoch, line1=l1, line2=l2, setnum=elm.elnum)
@@ -241,7 +245,7 @@ def create_tle_sql(source_files, dbfile='tle.db'):
 
 ### SGP4 library seems to like to use julian date as an epoch, so we will too.
 
-def sgp2tle(sgp4obj, i):
+def sgp2sql(sgp4obj, i):
 
 #    ut_epoch = (sgp4obj.epoch-dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)).total_seconds()
 #
@@ -269,29 +273,29 @@ def sgp2tle(sgp4obj, i):
     return tleobj
         
 
-def tle2sgp(tleobj):
+def sql2sgp(sqlobj):
 
     #epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
     #epoch1949  = (tleobj.epoch-epoch1949s)/(24.*60.*60.)
 
     #To compute the “epoch” argument, take the epoch’s Julian date and subtract 2433281.5 days.
-    epoch = tleobj.epoch - 2433281.5
+    epoch = sqlobj.epoch - 2433281.5
 
     sgp4obj = Satrec()
     sgp4obj.sgp4init(
                      WGS72,                 # gravity model
                      'i',                   # 'a' = old AFSPC mode, 'i' = improved mode
-                     tleobj.satnum,         # satnum: Satellite number
+                     sqlobj.satnum,         # satnum: Satellite number
                      epoch,                 # epoch: days since 1949 December 31 00:00 UT
-                     tleobj.bstar,          # bstar: drag coefficient (1/earth radii)
-                     tleobj.ndot,           # ndot: ballistic coefficient (radians/minute^2)
-                     tleobj.nddot,          # nddot: mean motion 2nd derivative (radians/minute^3)
-                     tleobj.ecco,           # ecco: eccentricity
-                     tleobj.argpo,          # argpo: argument of perigee (radians 0..2pi)
-                     tleobj.inclo,          # inclo: inclination (radians 0..pi)
-                     tleobj.mo,             # mo: mean anomaly (radians 0..2pi)
-                     tleobj.no_kozai,       # no_kozai: mean motion (radians/minute)
-                     tleobj.nodeo,          # nodeo: R.A. of ascending node (radians 0..2pi)
+                     sqlobj.bstar,          # bstar: drag coefficient (1/earth radii)
+                     sqlobj.ndot,           # ndot: ballistic coefficient (radians/minute^2)
+                     sqlobj.nddot,          # nddot: mean motion 2nd derivative (radians/minute^3)
+                     sqlobj.ecco,           # ecco: eccentricity
+                     sqlobj.argpo,          # argpo: argument of perigee (radians 0..2pi)
+                     sqlobj.inclo,          # inclo: inclination (radians 0..pi)
+                     sqlobj.mo,             # mo: mean anomaly (radians 0..2pi)
+                     sqlobj.no_kozai,       # no_kozai: mean motion (radians/minute)
+                     sqlobj.nodeo,          # nodeo: R.A. of ascending node (radians 0..2pi)
                     )
 
     return sgp4obj
@@ -324,12 +328,23 @@ class TLEHandler(object):
         #doy1 = (time1-time1.replace(month=1, day=1, hour=0, minute=0, second=0)).days + 1
         #print(doy0, doy1)
 
-        print(time0, time1)
+
+        #>>> from sgp4.api import jday
+        jd0, fr0 = jday(time0.year, time0.month, time0.day, time0.hour, time0.minute, time0.second)
+        jdtime0 = jd0 + fr0
+        jd1, fr1 = jday(time1.year, time1.month, time1.day, time1.hour, time1.minute, time1.second)
+        jdtime1 = jd1 + fr1
+        #>>> jd
+        #2458826.5
+        #>>> fr
+        #0.8625
+
+        #print(time0, time1)
 
         #utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
         #utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
-        utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
-        utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
+        #utime0 = (time0-dt.datetime.fromtimestamp(0)).total_seconds()
+        #utime1 = (time1-dt.datetime.fromtimestamp(0)).total_seconds()
         #utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
 
         # Make this its own function??
@@ -344,18 +359,18 @@ class TLEHandler(object):
 
         # All TLEs between first and last time
         conditions = sqlalchemy.and_(TLE.satnum==sat_cat,
-                                     TLE.epoch>=utime0,
-                                     TLE.epoch<=utime1)
+                                     TLE.epoch>=jdtime0,
+                                     TLE.epoch<=jdtime1)
         tle_between = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).all()
 
         # Last epoch before first time
         conditions = sqlalchemy.and_(TLE.satnum==sat_cat,
-                                      TLE.epoch<utime0)
+                                      TLE.epoch<jdtime0)
         tle_first = self.session.query(TLE).filter(conditions).order_by(desc(TLE.epoch)).first()
 
         # First epoch after last time
         conditions = sqlalchemy.and_(TLE.satnum==sat_cat,
-                                      TLE.epoch>utime1)
+                                      TLE.epoch>jdtime1)
         tle_last = self.session.query(TLE).filter(conditions).order_by(TLE.epoch).first()
 
         # Create full list
@@ -365,6 +380,7 @@ class TLEHandler(object):
         epoch_list = [t.epoch for t in tle_list]
         #epoch_list = tle_list['epoch']
 
+        # Return epochs as datetime objects UNLESS JD flag set
         return epoch_list, tle_list
 
 
@@ -373,7 +389,9 @@ class TLEHandler(object):
 
         sat_cat = int(sat_cat)
         #utime_array = np.array([(t-dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)).total_seconds() for t in time_array])
-        utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
+        #utime_array = np.array([(t-dt.datetime.fromtimestamp(0)).total_seconds() for t in time_array])
+
+        jd_array = np.array([jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time_array])
 
         # Make this its own function??
         # Extract relevant TLEs from database
@@ -403,7 +421,7 @@ class TLEHandler(object):
 #        epoch_list = [t.epoch for t in tle_list]
 
         # Find index of epoch closest to each time in the time array
-        closest_epoch_idx = np.array([np.argmin(np.abs(ut-epoch_list)) for ut in utime_array])
+        closest_epoch_idx = np.array([np.argmin(np.abs(t-epoch_list)) for t in jd_array])
 
         ## Somewhere in here check that epoch is within 10 days and if not, update TLE library from spacetrack.org?
         ## Raise warning instead?
@@ -416,7 +434,7 @@ class TLEHandler(object):
             subset_times = np.array(time_array)[closest_epoch_idx==i]
 
 
-            sgp4obj = tle2sgp(tle_list[i])
+            sgp4obj = sql2sgp(tle_list[i])
 
             line1, line2 = exporter.export_tle(sgp4obj)
 
@@ -429,9 +447,13 @@ class TLEHandler(object):
         return sat_position
 
 
-from skyfield.api import EarthSatellite, load, wgs84
-from skyfield.sgp4lib import TEME
+#from skyfield.api import EarthSatellite, load, wgs84
+#from skyfield.sgp4lib import TEME
 
+
+# This can probably be made more efficient by doing the satelite propagation directly
+#   with the sgp4 pacakge and only using skyfield for coordinate conversion.
+#   This is sort of done in propagate_tle3(), but it's not quite right.
 def propagate_tle2(time0, tleline1, tleline2):
 
     print(tleline1)
@@ -446,23 +468,23 @@ def propagate_tle2(time0, tleline1, tleline2):
     tmp = np.array([[t.year, t.month, t.day, t.hour, t.minute, t.second] for t in time0])
     tstmp = ts.utc(tmp[:,0], tmp[:,1], tmp[:,2], tmp[:,3], tmp[:,4], tmp[:,5])
     #t = ts.utc(2014, 1, 23, 11, 18, 7)
-    print(tstmp.utc_iso())
+    #print(tstmp.utc_iso())
 
     geocentric = satellite.at(tstmp)
 
     posobj = wgs84.geographic_position_of(geocentric)
 
-    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
-    ax.plot(posobj.itrs_xyz.km[0], posobj.itrs_xyz.km[1], posobj.itrs_xyz.km[2])
-    plt.show()
+    #fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
+    #ax.plot(posobj.itrs_xyz.km[0], posobj.itrs_xyz.km[1], posobj.itrs_xyz.km[2])
+    #plt.show()
 
 
-    print('PROPAGATE_TLE2')
-    print(posobj.latitude, posobj.longitude)
+#    print('PROPAGATE_TLE2')
+#    print(posobj.latitude, posobj.longitude)
     
     return posobj.itrs_xyz.m
 
-from skyfield import sgp4lib
+#from skyfield import sgp4lib
 
 def propagate_tle3(time0, tleline1, tleline2):
 
@@ -488,107 +510,107 @@ def propagate_tle3(time0, tleline1, tleline2):
 
 
 
-def propagate_tle(time0, tleline1, tleline2):
-    # time0 is an array of datetime objects that the satellite position is to be calculated at
-    # TLE is a list consisting of the first and second lines of the TLE as strings ([TLE line 1, TLE line 2])
-
-    # Note: This function returns satellite position in Pseudo Earth-Fixed (PEF) coordinates, which are
-    #   assumed to be approximately equal to Earth-Centered, Earth-Fixed (ECEF) coordinates.  This does NOT
-    #   account for polar motion (precession, nutation).  For discussion of a "proper" PEF->ECEF transformation,
-    #   please refer to Vallado et al., 2006 Appendix C or Panigrahi and Gaurav, 2015
-    #   (https://mycoordinates.org/tracking-satellite-footprints-on-earth%E2%80%99s-surface/)
-
-    #X = []
-    #Y = []
-    #Z = []
-
-
-
-    # initialize tle object
-    tle = Satrec.twoline2rv(tleline1, tleline2)
-
-
-#    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
-#    epoch1949  = (tleinfo.epoch-epoch1949s)/(24.*60.*60.)
+#def propagate_tle(time0, tleline1, tleline2):
+#    # time0 is an array of datetime objects that the satellite position is to be calculated at
+#    # TLE is a list consisting of the first and second lines of the TLE as strings ([TLE line 1, TLE line 2])
 #
-#    tle = Satrec()
-#    tle.sgp4init(
-#        wgs72,                # gravity model
-#        'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
-#        tleinfo.satnum,                # satnum: Satellite number
-#        epoch1949,       # epoch: days since 1949 December 31 00:00 UT
-#        tleinfo.bstar,           # bstar: drag coefficient (1/earth radii)
-#        tleinfo.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
-#        tleinfo.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
-#        np.deg2rad(tleinfo.ecco),            # ecco: eccentricity
-#        np.deg2rad(tleinfo.argpo),   # argpo: argument of perigee (radians 0..2pi)
-#        np.deg2rad(tleinfo.inclo),   # inclo: inclination (radians 0..pi)
-#        np.deg2rad(tleinfo.mo),   # mo: mean anomaly (radians 0..2pi)
-#        np.deg2rad(tleinfo.no_kozai),  # no_kozai: mean motion (radians/minute)
-#        np.deg2rad(tleinfo.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
-#    )
-
-
-    #out = jday(t)
-    out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
-    jd, fr = np.array(out, order='F').T     # order='F' needed for some kind of error not contiguous in C error when passed into sgp4_array() ???
-    print(jd.flags)
-    print(fr.flags)
-    #jd = np.ascontiguousarray(jd)
-    #fr = np.ascontiguousarray(fr)
-    e, position, velocity = tle.sgp4_array(jd, fr)
-    #print(r.shape, v.shape)
-
-
-
-    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
-    ax.plot(position[0], position[1], position[2])
-    plt.show()
-
-
-#    for t in time0:
-
-    # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
-    #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
-    #jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
-    #e, position, velocity = tle.sgp4(jd, fr)
-    position_TEME = np.array(position)
-    #position_PEF = np.array(position)
-
-
-    ## convert to Pseudo Earth Fixed [PEF]
-
-    # compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
-    #JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
-    JD = np.array([jday2(t.year,t.month,t.day,t.hour,t.minute,t.second) for t in time0])
-
-    T_UT1 = (JD - 2451545.0)/36525.
-
-    # compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
-    GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
-    # convert GMST to angle (units of rad)
-    GMST = GMST*2*np.pi/86400. % (2*np.pi)
-    # form rotational matrix
-    #Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
-    Rot = np.array([[np.cos(GMST), np.sin(GMST), np.zeros(GMST.shape)],
-                    [-np.sin(GMST), np.cos(GMST), np.zeros(GMST.shape)],
-                    [np.zeros(GMST.shape), np.zeros(GMST.shape), np.ones(GMST.shape)]])
-    # apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
-    print(Rot.shape, position_TEME.shape)
-    #position_PEF = np.dot(Rot,position_TEME)
-    position_PEF = np.einsum('ijk,kj->ki', Rot, position_TEME)
-
-    print(position_TEME.shape, position_PEF.shape)
-
-    # add position to coordinate arrays
-    #X.append(position_PEF[0])
-    #Y.append(position_PEF[1])
-    #Z.append(position_PEF[2])
-    X = position_PEF[0]
-    Y = position_PEF[1]
-    Z = position_PEF[2]
-
-    return np.array(X)*1000., np.array(Y)*1000., np.array(Z)*1000.
+#    # Note: This function returns satellite position in Pseudo Earth-Fixed (PEF) coordinates, which are
+#    #   assumed to be approximately equal to Earth-Centered, Earth-Fixed (ECEF) coordinates.  This does NOT
+#    #   account for polar motion (precession, nutation).  For discussion of a "proper" PEF->ECEF transformation,
+#    #   please refer to Vallado et al., 2006 Appendix C or Panigrahi and Gaurav, 2015
+#    #   (https://mycoordinates.org/tracking-satellite-footprints-on-earth%E2%80%99s-surface/)
+#
+#    #X = []
+#    #Y = []
+#    #Z = []
+#
+#
+#
+#    # initialize tle object
+#    tle = Satrec.twoline2rv(tleline1, tleline2)
+#
+#
+##    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
+##    epoch1949  = (tleinfo.epoch-epoch1949s)/(24.*60.*60.)
+##
+##    tle = Satrec()
+##    tle.sgp4init(
+##        wgs72,                # gravity model
+##        'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
+##        tleinfo.satnum,                # satnum: Satellite number
+##        epoch1949,       # epoch: days since 1949 December 31 00:00 UT
+##        tleinfo.bstar,           # bstar: drag coefficient (1/earth radii)
+##        tleinfo.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
+##        tleinfo.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
+##        np.deg2rad(tleinfo.ecco),            # ecco: eccentricity
+##        np.deg2rad(tleinfo.argpo),   # argpo: argument of perigee (radians 0..2pi)
+##        np.deg2rad(tleinfo.inclo),   # inclo: inclination (radians 0..pi)
+##        np.deg2rad(tleinfo.mo),   # mo: mean anomaly (radians 0..2pi)
+##        np.deg2rad(tleinfo.no_kozai),  # no_kozai: mean motion (radians/minute)
+##        np.deg2rad(tleinfo.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
+##    )
+#
+#
+#    #out = jday(t)
+#    out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
+#    jd, fr = np.array(out, order='F').T     # order='F' needed for some kind of error not contiguous in C error when passed into sgp4_array() ???
+#    print(jd.flags)
+#    print(fr.flags)
+#    #jd = np.ascontiguousarray(jd)
+#    #fr = np.ascontiguousarray(fr)
+#    e, position, velocity = tle.sgp4_array(jd, fr)
+#    #print(r.shape, v.shape)
+#
+#
+#
+#    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
+#    ax.plot(position[0], position[1], position[2])
+#    plt.show()
+#
+#
+##    for t in time0:
+#
+#    # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
+#    #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
+#    #jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
+#    #e, position, velocity = tle.sgp4(jd, fr)
+#    position_TEME = np.array(position)
+#    #position_PEF = np.array(position)
+#
+#
+#    ## convert to Pseudo Earth Fixed [PEF]
+#
+#    # compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
+#    #JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
+#    JD = np.array([jday2(t.year,t.month,t.day,t.hour,t.minute,t.second) for t in time0])
+#
+#    T_UT1 = (JD - 2451545.0)/36525.
+#
+#    # compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
+#    GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
+#    # convert GMST to angle (units of rad)
+#    GMST = GMST*2*np.pi/86400. % (2*np.pi)
+#    # form rotational matrix
+#    #Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
+#    Rot = np.array([[np.cos(GMST), np.sin(GMST), np.zeros(GMST.shape)],
+#                    [-np.sin(GMST), np.cos(GMST), np.zeros(GMST.shape)],
+#                    [np.zeros(GMST.shape), np.zeros(GMST.shape), np.ones(GMST.shape)]])
+#    # apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
+#    print(Rot.shape, position_TEME.shape)
+#    #position_PEF = np.dot(Rot,position_TEME)
+#    position_PEF = np.einsum('ijk,kj->ki', Rot, position_TEME)
+#
+#    print(position_TEME.shape, position_PEF.shape)
+#
+#    # add position to coordinate arrays
+#    #X.append(position_PEF[0])
+#    #Y.append(position_PEF[1])
+#    #Z.append(position_PEF[2])
+#    X = position_PEF[0]
+#    Y = position_PEF[1]
+#    Z = position_PEF[2]
+#
+#    return np.array(X)*1000., np.array(Y)*1000., np.array(Z)*1000.
 
 
 
