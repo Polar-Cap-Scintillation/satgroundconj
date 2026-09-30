@@ -1,34 +1,27 @@
 # tle.py
 
-# Propigates satellite position at a particular time given a Two Line Element.
-# Based primarially off of Vallado 2006
-# Requires the sgp4 package (https://pypi.org/project/sgp4/)
-# References:
-#   Vallado, D. A., Crawford, P., Hujsak, R., and Kelso, T. S. (2006). "Revisiting Spacetrack Report #3",
-#       presented at the AIAA/AAS Astrodynamics Specialist Converence, Keystone, CO, 2006 August 21-24.
-#   Zhu, J. (1994). Conversion of Earth-centered Earth-fixed coordinates to geodetic coordinates.
-#       IEEE Trans Aerosp Electron Syst, 30(3): 957-961. doi: 10.1109/7.303772
-
-# It violates space-track.org's usage policy to make too many API queries.  This
-#   code predownloads all TLEs for the satellite of interest and saves them in a
-#   local directory defined in space_track_credentials.  To force this code to 
-#   update all TLEs, just delete the contents fo this directory and let it
-#   request the latest TLE files.
-
-# NEW
-# BULK DOWNLOAD OF ALL TLE
-# https://ln5.sync.com/dl/afd354190/c5cd2q72-a5qjzp4q-nbjdiqkr-cenajuqu
-#
-
-### SGP4 library seems to like to use julian date as an epoch, so we will too.
-
-###############################################################
-# TODO
-# - add command line script for generating TLE database
-################################################################
-
-
-
+# This module manages finding the correct TLEs (Two Line Elements) and using
+#   them to compute the position of a satellite.
+# There are a variety of services for providing the latest TLEs, but when using
+#   this code to calculate historical conjunctions it is better to download
+#   full files of TLEs and reference them locally. It violates the API use
+#   agreement to most of these to make lots of repeted queries to download the
+#   same information and you'll get your IP banned.
+# Lists of TLEs are typically distributed as text files, which are extremely slow
+#   to read for high volumes.  This in particular has become a problem with the
+#   recent explosion of comercial LEO satellites, making single year files GB in
+#   volume.  To improve this, this module expects you to first create a SQL
+#   database from the TLE text file, which is faster than looking up TLEs from
+#   text files.  To create the sql database, run the following command line:
+#       $ create-tle-db tle1.txt tle2.txt tle3.txt
+#   Source files can be downloaded from the space-track.org bulk data store:
+#   https://ln5.sync.com/dl/afd354190/c5cd2q72-a5qjzp4q-nbjdiqkr-cenajuqu
+# The sgp4 library uses Julian dates mostly to keep track of epochs, so that is
+#   what's used for most internal functionality of this module.
+# Most TLE propigation stuff is now handled internally by the sgp4 and the skyfield
+#   packages.  These references may still be useful though, specifically for the
+#   coordinate transformation from the output of the SGP4 calculations (TEME?)
+#   into something useful for geospace applications
 
 
 import os
@@ -100,18 +93,14 @@ def create_sql_database(source_files, dbfile='tle.db'):
             with open(srcfile, 'r') as f:
                 for l1 in tqdm(f, total=num_lines/2):
                     l2 = f.readline()
-           
+
+                    # formulate sgp4 object
                     try:
                         sgp4obj = Satrec.twoline2rv(l1, l2)
                     except ValueError as e:
-                        # Put this in an error log
-                        #print(e)
-                        #print(len(l1), len(l2))
-                        #print('LINE 1:', l1)
-                        #print('LINE 2:', l2)
                         continue
        
-
+                    # Add TLE to database
                     sqlobj = sgp2sql(sgp4obj, i)
                     session.add(sqlobj)
 
@@ -194,15 +183,25 @@ class TLEHandler(object):
 
 
     def load_db(self, dbfile):
+        """
+        Load SQL database of historical TLEs
+        """
 
         engine = create_engine(f"sqlite:///{dbfile}", echo=False)
         self.session = Session(engine)
 
 
     def select_tles(self, sat_cat, time0, time1, jd_epoch=False):
+        """
+        Find all TLEs for a certain satellite between two times, plus the nearest
+        one before and after the time interval.  This should create a comprehensive
+        list of all TLEs that might be needed for propigating satelite motion between
+        those two times.
+        """
 
         sat_cat = int(sat_cat)
 
+        # Calculate Julian day of start and end time
         jd0, fr0 = jday(time0.year, time0.month, time0.day, time0.hour, time0.minute, time0.second)
         jdtime0 = jd0 + fr0
         jd1, fr1 = jday(time1.year, time1.month, time1.day, time1.hour, time1.minute, time1.second)
@@ -241,9 +240,10 @@ class TLEHandler(object):
 
 
     def sat_position(self, sat_cat, time_array):
-        # Note: This function only works for sequential times
-
-        sat_cat = int(sat_cat)
+        """
+        Calculate satellite position at all points in given time array
+        Note: This function only works for sequential times
+        """
 
         jd_array = np.array([jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time_array])
 
@@ -261,9 +261,8 @@ class TLEHandler(object):
         for i in np.unique(closest_epoch_idx):
             # Select subset of times closest to a particular epoch
             subset_times = np.array(time_array)[closest_epoch_idx==i]
-
+            # TLE for that epoch
             sgp4obj = sql2sgp(tle_list[i])
-
             line1, line2 = exporter.export_tle(sgp4obj)
 
             # calcualte satellite position using functions from TLE propgation script
@@ -294,208 +293,27 @@ def propagate_tle2(time0, tleline1, tleline2):
 
 
 
-def propagate_tle3(time0, tleline1, tleline2):
-
-    # initialize tle object
-    tle = Satrec.twoline2rv(tleline1, tleline2)
-
-    out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
-    jd, fr = np.array(out, order='F').T     # order='F' needed for some kind of error not contiguous in C error when passed into sgp4_array() ???
-    e, r, v = tle.sgp4_array(jd, fr)
-    #print(r.shape, v.shape)
-
-
-    #posobj = TEME(r)
-
-    r,v = sgp4lib.TEME_to_ITRF(jd+fr, r, v)
-    print(r.shape)
-
-    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
-    #ax.plot(position[0], position[1], position[2])
-    ax.plot(posobj.itrs_xyz.km[0], posobj.itrs_xyz.km[1], posobj.itrs_xyz.km[2])
-    plt.show()
-
-
-
-
-#def propagate_tle(time0, tleline1, tleline2):
-#    # time0 is an array of datetime objects that the satellite position is to be calculated at
-#    # TLE is a list consisting of the first and second lines of the TLE as strings ([TLE line 1, TLE line 2])
-#
-#    # Note: This function returns satellite position in Pseudo Earth-Fixed (PEF) coordinates, which are
-#    #   assumed to be approximately equal to Earth-Centered, Earth-Fixed (ECEF) coordinates.  This does NOT
-#    #   account for polar motion (precession, nutation).  For discussion of a "proper" PEF->ECEF transformation,
-#    #   please refer to Vallado et al., 2006 Appendix C or Panigrahi and Gaurav, 2015
-#    #   (https://mycoordinates.org/tracking-satellite-footprints-on-earth%E2%80%99s-surface/)
-#
-#    #X = []
-#    #Y = []
-#    #Z = []
-#
-#
+#def propagate_tle3(time0, tleline1, tleline2):
 #
 #    # initialize tle object
 #    tle = Satrec.twoline2rv(tleline1, tleline2)
 #
-#
-##    epoch1949s = (dt.datetime(1949,12,31) - dt.datetime.fromtimestamp(0)).total_seconds()
-##    epoch1949  = (tleinfo.epoch-epoch1949s)/(24.*60.*60.)
-##
-##    tle = Satrec()
-##    tle.sgp4init(
-##        wgs72,                # gravity model
-##        'i',                  # 'a' = old AFSPC mode, 'i' = improved mode
-##        tleinfo.satnum,                # satnum: Satellite number
-##        epoch1949,       # epoch: days since 1949 December 31 00:00 UT
-##        tleinfo.bstar,           # bstar: drag coefficient (1/earth radii)
-##        tleinfo.ndot,                  # ndot: ballistic coefficient (radians/minute^2)
-##        tleinfo.nddot,                  # nddot: mean motion 2nd derivative (radians/minute^3)
-##        np.deg2rad(tleinfo.ecco),            # ecco: eccentricity
-##        np.deg2rad(tleinfo.argpo),   # argpo: argument of perigee (radians 0..2pi)
-##        np.deg2rad(tleinfo.inclo),   # inclo: inclination (radians 0..pi)
-##        np.deg2rad(tleinfo.mo),   # mo: mean anomaly (radians 0..2pi)
-##        np.deg2rad(tleinfo.no_kozai),  # no_kozai: mean motion (radians/minute)
-##        np.deg2rad(tleinfo.nodeo),    # nodeo: R.A. of ascending node (radians 0..2pi)
-##    )
-#
-#
-#    #out = jday(t)
 #    out = [jday(t.year, t.month, t.day, t.hour, t.minute, t.second) for t in time0]
 #    jd, fr = np.array(out, order='F').T     # order='F' needed for some kind of error not contiguous in C error when passed into sgp4_array() ???
-#    print(jd.flags)
-#    print(fr.flags)
-#    #jd = np.ascontiguousarray(jd)
-#    #fr = np.ascontiguousarray(fr)
-#    e, position, velocity = tle.sgp4_array(jd, fr)
+#    e, r, v = tle.sgp4_array(jd, fr)
 #    #print(r.shape, v.shape)
 #
 #
+#    #posobj = TEME(r)
+#
+#    r,v = sgp4lib.TEME_to_ITRF(jd+fr, r, v)
+#    print(r.shape)
 #
 #    fig, ax = plt.subplots(subplot_kw={'projection':'3d'})
-#    ax.plot(position[0], position[1], position[2])
+#    #ax.plot(position[0], position[1], position[2])
+#    ax.plot(posobj.itrs_xyz.km[0], posobj.itrs_xyz.km[1], posobj.itrs_xyz.km[2])
 #    plt.show()
-#
-#
-##    for t in time0:
-#
-#    # calculate satellite position/velocity in True Equator, Mean Equinox [TEME] (units of km and km/s)
-#    #position, velocity = tle.propagate(t.year,month=t.month,day=t.day,hour=t.hour,minute=t.minute,second=t.second)
-#    #jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute, t.second)
-#    #e, position, velocity = tle.sgp4(jd, fr)
-#    position_TEME = np.array(position)
-#    #position_PEF = np.array(position)
-#
-#
-#    ## convert to Pseudo Earth Fixed [PEF]
-#
-#    # compute Julian centeries of UT1 - discussed in Vallado et al., 2006, sec. II.E
-#    #JD = jday2(t.year,t.month,t.day,t.hour,t.minute,t.second)
-#    JD = np.array([jday2(t.year,t.month,t.day,t.hour,t.minute,t.second) for t in time0])
-#
-#    T_UT1 = (JD - 2451545.0)/36525.
-#
-#    # compute Greenwich Mean Sidereal Time (units of s) - Vallado et al., 2006, eqn. 2
-#    GMST = (67310.54841+(876600*60*60+8640184.812866)*T_UT1+0.093104*T_UT1**2-6.2e-6*T_UT1**3)
-#    # convert GMST to angle (units of rad)
-#    GMST = GMST*2*np.pi/86400. % (2*np.pi)
-#    # form rotational matrix
-#    #Rot = np.array([[np.cos(GMST),np.sin(GMST),0.],[-np.sin(GMST),np.cos(GMST),0.],[0.,0.,1.]])
-#    Rot = np.array([[np.cos(GMST), np.sin(GMST), np.zeros(GMST.shape)],
-#                    [-np.sin(GMST), np.cos(GMST), np.zeros(GMST.shape)],
-#                    [np.zeros(GMST.shape), np.zeros(GMST.shape), np.ones(GMST.shape)]])
-#    # apply rotational matrix to TEME position to get PEF position (units of km) - Valladeo et al., 2006, eqn. 1
-#    print(Rot.shape, position_TEME.shape)
-#    #position_PEF = np.dot(Rot,position_TEME)
-#    position_PEF = np.einsum('ijk,kj->ki', Rot, position_TEME)
-#
-#    print(position_TEME.shape, position_PEF.shape)
-#
-#    # add position to coordinate arrays
-#    #X.append(position_PEF[0])
-#    #Y.append(position_PEF[1])
-#    #Z.append(position_PEF[2])
-#    X = position_PEF[0]
-#    Y = position_PEF[1]
-#    Z = position_PEF[2]
-#
-#    return np.array(X)*1000., np.array(Y)*1000., np.array(Z)*1000.
 
 
 
 
-def example():
-
-    # Create a seperate file called space_track_credentials.py and add only your spacetrack credentials as shown:
-    # ST_USERNAME=''
-    # ST_PASSWORD=''
-
-    # NORAD satellite ID
-    #sat_id = 44628   # TLE for ICON
-    sat_id = 39452
-
-    # Create TLEHandler object
-    tle = TLEHandler(sat_id)
-
-    # Create array of desired times
-    time_array = np.array([dt.datetime(2020,1,1,0,0,0)+dt.timedelta(seconds=60.*m) for m in range(60)])
-
-    # Call tle.sat_position to calculate the satelite position at each time
-    sat_position = tle.sat_position(time_array).T
-
-    # position returned in ECEF coordinates
-    print(sat_position)
-
-
-
-###########################################################################################
-# For now, assume this code is correct - confirm later once TLE lookup works for small time ranges
-
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-
-def sql_test():
-
-    sat_id = 39452   # Swarm A
-    time_list = [dt.datetime(2020,2,10,13,25,0)+dt.timedelta(minutes=i) for i in range(10)]
-
-    tlelib = TLEHandler()
-    pos = tlelib.sat_position(sat_id, time_list)
-    print(pos.shape)
-    glat, glon, galt = pm.ecef2geodetic(pos[0], pos[1], pos[2])
-
-    proj = ccrs.Mercator()
-    fig, ax = plt.subplots(subplot_kw=dict(projection=proj))
-    ax.coastlines()
-    ax.gridlines()
-
-    ax.plot(glon, glat, transform=ccrs.PlateCarree())
-
-    plt.show()
-
-###########################################################################################
-
-
-def main():
-    """
-    Example where the TLE is given by user
-    """
-
-    TLE = ['1     1U          18350.30892361  .00001123  00000-0  66525-4 0   109','2     1  85.0373 178.2871 0002550 225.5672 175.5175 15.21584957    13']
-    times = np.array([dt.datetime(2018,12,17,0,0,0)+dt.timedelta(hours=h) for h in range(24)])
-
-    X, Y, Z = propagate_tle(times,TLE)
-    print(X, Y, Z)
-    gdlat, gdlon, gdalt = pm.ecef2geodetic(X,Y,Z)
-
-    print('{:^20}{:^10}{:^10}{:^10}'.format('Time','GLAT','GLON','GALT'))
-    for t, lat, lon, alt in zip(times,gdlat,gdlon,gdalt):
-        print('{}{:10.2f}{:10.2f}{:10.2f}'.format(t, lat, lon, alt))
-
-
-if __name__ == '__main__':
-#    main()
-#    example()
-#    lib_example()
-#    create_tle_library()
-    #create_tle_sql()
-    sql_test()
